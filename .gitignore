@@ -42,6 +42,7 @@ jdk/
 # Compiled Binaries
 *.apk
 *.aab
+*.idsig
 
 # System & OS
 Thumbs.db

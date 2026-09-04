@@ -9,6 +9,51 @@ const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// --- Broadcast Storage & Persistence ---
+const BROADCAST_FILE = path.join(__dirname, '..', 'broadcasts.json');
+interface BroadcastItem {
+    id: string;
+    title: string;
+    message: string;
+    trackQuery?: string;
+    trackId?: string;
+    trackUrl?: string;
+    imageUrl?: string;
+    actionText?: string;
+    timestamp: number;
+}
+
+function loadBroadcasts(): BroadcastItem[] {
+    try {
+        if (fs.existsSync(BROADCAST_FILE)) {
+            return JSON.parse(fs.readFileSync(BROADCAST_FILE, 'utf-8'));
+        }
+    } catch (_) {}
+    return [
+        {
+            id: "bc_welcome",
+            title: "⚡ Welcome to CyroSonic",
+            message: "Stream lossless music, enjoy 3-phase speed dials, and explore smart taste radio.",
+            trackQuery: "Blinding Lights The Weeknd",
+            trackId: "4NR4vK2ZlA",
+            trackUrl: "https://cyrosonic.com",
+            imageUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800",
+            actionText: "▶️ Listen Now",
+            timestamp: Date.now()
+        }
+    ];
+}
+
+function saveBroadcasts(list: BroadcastItem[]) {
+    try {
+        fs.writeFileSync(BROADCAST_FILE, JSON.stringify(list, null, 2), 'utf-8');
+    } catch (e: any) {
+        console.error("Failed to save broadcasts:", e.message);
+    }
+}
+let broadcasts: BroadcastItem[] = loadBroadcasts();
 
 app.get('/', (req, res) => {
     res.json({
@@ -27,7 +72,7 @@ app.get('/api/version', (req, res) => {
         versionCode: 16,
         versionName: "2.0.0",
         apkUrl: "https://cyrosonic.com/download/CyroSonic-Release.apk",
-        changelog: "• YouTube Music 3-Phase Speed Dial (Most Listened, Recommended, Related)\n• Over-The-Air (OTA) In-App APK Updates\n• Non-linear Taste Radio recommendation playback\n• Pre-cached instant audio start\n• Dynamic Vibe visual themes on refresh\n• Universal cyrosonic.com music share links",
+        changelog: "• YouTube Music 3-Phase Speed Dial (Most Listened, Recommended, Related)\n• Over-The-Air (OTA) In-App APK Updates\n• Non-linear Taste Radio recommendation playback\n• Pre-cached instant audio start\n• Dynamic Vibe visual themes on refresh\n• Universal cyrosonic.com music share links\n• Cloud Server-Driven Swiggy-Style Broadcasts",
         forceUpdate: false,
         featureFlags: {
             enableHighResAudio: true,
@@ -38,10 +83,58 @@ app.get('/api/version', (req, res) => {
     });
 });
 
+// --- Server-Driven Broadcast API (Swiggy / Zomato Style) ---
+app.get('/api/broadcast/latest', (req, res) => {
+    res.json({
+        success: true,
+        broadcast: broadcasts[0] || null
+    });
+});
+
+app.get('/api/broadcasts', (req, res) => {
+    res.json({
+        success: true,
+        broadcasts
+    });
+});
+
+app.post('/api/broadcast', (req, res) => {
+    const { title, message, trackQuery, trackId, imageUrl, actionText, adminKey } = req.body;
+    const expectedKey = process.env.ADMIN_KEY || 'cyrosonic2026';
+    if (adminKey !== expectedKey && req.headers['x-admin-key'] !== expectedKey) {
+        return res.status(401).json({ success: false, error: "Unauthorized: Invalid Admin Key" });
+    }
+    if (!title || !message) {
+        return res.status(400).json({ success: false, error: "Title and message are required" });
+    }
+    const newBc: BroadcastItem = {
+        id: `bc_${Date.now()}`,
+        title: title.trim(),
+        message: message.trim(),
+        trackQuery: (trackQuery || trackId || '').trim(),
+        trackId: (trackId || '').trim(),
+        trackUrl: trackId ? `https://cyrosonic.com/track/${trackId}` : 'https://cyrosonic.com',
+        imageUrl: (imageUrl || '').trim(),
+        actionText: (actionText || '▶️ Listen Now').trim(),
+        timestamp: Date.now()
+    };
+    broadcasts.unshift(newBc);
+    if (broadcasts.length > 50) broadcasts = broadcasts.slice(0, 50);
+    saveBroadcasts(broadcasts);
+    console.log(`[Broadcast Dispatched] "${newBc.title}" to all CyroSonic devices.`);
+    res.json({
+        success: true,
+        message: "Broadcast published successfully to all CyroSonic devices!",
+        broadcast: newBc
+    });
+});
+
 // --- Public APK Direct Download Endpoint ---
 app.get('/download/:filename?', (req, res) => {
     const filename = req.params.filename || 'CyroSonic-Release.apk';
     const possiblePaths = [
+        path.join(__dirname, '..', 'CyroSonic-Release.apk'),
+        path.join(__dirname, '..', '..', 'CyroSonic-Release.apk'),
         path.join(__dirname, '..', '..', 'HunterXMusic-Release.apk'),
         path.join(__dirname, '..', '..', 'HunterXMusic.apk'),
         path.join(__dirname, '..', 'public', filename)

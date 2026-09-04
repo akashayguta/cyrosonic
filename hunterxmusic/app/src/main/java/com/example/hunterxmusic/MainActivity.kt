@@ -104,6 +104,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        try {
+            com.example.hunterxmusic.core.broadcast.ServerBroadcastManager.syncLatestBroadcast(
+                this,
+                HunterApplication.dependencies.okHttpClient
+            )
+        } catch (_: Exception) { }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)

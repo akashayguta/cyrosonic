@@ -37,15 +37,18 @@ android {
     }
 
     signingConfigs {
-        // Only declared when keystore.properties is present, so the module
-        // still configures cleanly on a machine without the signing secrets.
-        if (hasReleaseKeystore) {
-            create("release") {
-                storeFile = file(keystoreProperties.getProperty("storeFile"))
-                storePassword = keystoreProperties.getProperty("storePassword")
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
+        create("release") {
+            val jksFile = if (rootProject.file("cyrosonic-release.jks").exists()) {
+                rootProject.file("cyrosonic-release.jks")
+            } else {
+                file("cyrosonic-release.jks")
             }
+            storeFile = jksFile
+            storePassword = keystoreProperties.getProperty("storePassword", "hunterxmusic123")
+            keyAlias = keystoreProperties.getProperty("keyAlias", "cyrosonic")
+            keyPassword = keystoreProperties.getProperty("keyPassword", "hunterxmusic123")
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
 
@@ -55,13 +58,7 @@ android {
             isShrinkResources = false
             isDebuggable = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Real release key when creds exist; otherwise debug key so the
-            // build still succeeds (that APK is for local testing only).
-            signingConfig = if (hasReleaseKeystore) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

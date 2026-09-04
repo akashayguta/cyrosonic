@@ -428,8 +428,36 @@ class MusicRepositoryImpl(
     }
 
     // ──────────────────────────────────────────────────────────
-    // STREAMING — YouTube primary + JioSaavn fallback (Echo-style)
+    // STREAMING — Cloud Render Server primary + YouTube + JioSaavn fallback
     // ──────────────────────────────────────────────────────────
+
+    private suspend fun resolveStreamFromCloudServer(videoId: String): String? = withContext(Dispatchers.IO) {
+        val serverEndpoints = listOf(
+            "https://api.cyrosonic.com/youtube/stream?id=$videoId",
+            "https://cyrosonic.com/youtube/stream?id=$videoId"
+        )
+        for (endpoint in serverEndpoints) {
+            try {
+                val req = okhttp3.Request.Builder()
+                    .url(endpoint)
+                    .header("Accept", "application/json")
+                    .build()
+                okHttpClient.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string() ?: return@use
+                        val json = org.json.JSONObject(body)
+                        if (json.optBoolean("success", false)) {
+                            val url = json.optString("url", "")
+                            if (url.isNotBlank() && url.startsWith("http")) {
+                                return@withContext url
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) { }
+        }
+        null
+    }
 
     override suspend fun getStreamingUrl(track: Track): String {
         // If downloaded offline, we use the local path (represented as an encrypted:// URI)
@@ -463,6 +491,15 @@ class MusicRepositoryImpl(
 
         // 3. Direct YouTube Video ID check (length of 11 characters)
         if (track.id.length == 11) {
+            try {
+                // Primary: Cloud CyroSonic Render server resolver
+                val cloudUrl = resolveStreamFromCloudServer(track.id)
+                if (!cloudUrl.isNullOrBlank()) {
+                    streamUrlCache.put(track.id, cloudUrl)
+                    return cloudUrl
+                }
+            } catch (_: Exception) { }
+
             try {
                 // Try YouTube Music InnerTube multi-client resolver first (fastest)
                 val ytUrl = YouTubeInnerTube.getStreamUrl(track.id, okHttpClient)
@@ -514,6 +551,14 @@ class MusicRepositoryImpl(
         try {
             val videoId = YouTubeInnerTube.searchVideoId(searchQuery, okHttpClient)
             if (videoId != null) {
+                try {
+                    val cloudUrl = resolveStreamFromCloudServer(videoId)
+                    if (!cloudUrl.isNullOrBlank()) {
+                        streamUrlCache.put(track.id, cloudUrl)
+                        return cloudUrl
+                    }
+                } catch (_: Exception) { }
+
                 // Try InnerTube first
                 val ytUrl = YouTubeInnerTube.getStreamUrl(videoId, okHttpClient)
                 if (!ytUrl.isNullOrBlank() && ytUrl.startsWith("http")) {
