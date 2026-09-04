@@ -27,7 +27,7 @@ app.get('/', (req, res) => {
 // --- In-App Over-The-Air (OTA) Updates & Telematics Endpoint ---
 app.get('/api/version', (req, res) => {
     res.json({
-        versionCode: 2,
+        versionCode: 16,
         versionName: "2.0.0",
         apkUrl: "https://cyrosonic.com/download/CyroSonic-Release.apk",
         changelog: "• YouTube Music 3-Phase Speed Dial (Most Listened, Recommended, Related)\n• Over-The-Air (OTA) In-App APK Updates\n• Non-linear Taste Radio recommendation playback\n• Pre-cached instant audio start\n• Dynamic Vibe visual themes on refresh\n• Universal cyrosonic.com music share links",
