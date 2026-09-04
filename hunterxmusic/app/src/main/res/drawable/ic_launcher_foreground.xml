@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CyroSonic mark — final simple form: one perfect ring of ice,
+     one molten waveform through its heart. Nothing else. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M54,54 m-19,0 a19,19 0 1,1 38,0 a19,19 0 1,1 -38,0"
+        android:strokeWidth="7">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="35" android:startY="35"
+                android:endX="73" android:endY="73"
+                android:type="linear">
+                <item android:color="#FF7DD3FC" android:offset="0.0" />
+                <item android:color="#FFA5F3FC" android:offset="0.5" />
+                <item android:color="#FFA5B4FC" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path
+        android:pathData="M30,54 L38,54 L42,47 L47,61 L52,44 L57,60 L61,49 L64,54 L78,54"
+        android:strokeWidth="4.6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="30" android:startY="54"
+                android:endX="78" android:endY="54"
+                android:type="linear">
+                <item android:color="#FFFCE38A" android:offset="0.0" />
+                <item android:color="#FFF6C453" android:offset="0.5" />
+                <item android:color="#FF7DD3FC" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

@@ -1,0 +1,85 @@
+# ── CyroSonic Baseline Profile ──────────────────────────────────────────────
+# Ahead-of-time compiled hot paths: app entry, Compose runtime, Media3/ExoPlayer
+# init, OkHttp streaming, Coil image loading, Room, splash screen. Kept
+# conservative — a rule that matches nothing is simply ignored, never fatal.
+# Hand-maintained; regenerate with a BaselineProfileRule device run for deeper
+# coverage on release.
+
+# App entry
+Lcom/example/hunterxmusic/HunterApplication;
+Lcom/example/hunterxmusic/MainActivity;
+HSPLcom/example/hunterxmusic/MainActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLcom/example/hunterxmusic/MainActivity;->onNewIntent(Landroid/content/Intent;)V
+Lcom/example/hunterxmusic/AppDependencies;
+
+# Compose runtime & UI
+Landroidx/compose/runtime/**;
+Landroidx/compose/runtime/ComposerImpl;
+Landroidx/compose/runtime/CompositionImpl;
+Landroidx/compose/runtime/SnapshotStateKt;
+Landroidx/compose/ui/ComposeUiVerifier;
+Landroidx/compose/ui/platform/AndroidComposeView;
+Landroidx/compose/ui/platform/AndroidComposeViewAccessibilityDelegateCompat;
+Landroidx/compose/ui/graphics/AndroidComposeView;
+Landroidx/compose/ui/input/pointer/PointerInputEventHandler;
+Landroidx/compose/material3/SurfaceKt;
+Landroidx/compose/material3/TextKt;
+Landroidx/compose/material3/IconKt;
+Landroidx/compose/material3/SliderKt;
+Landroidx/compose/material3/LinearProgressIndicatorKt;
+Landroidx/compose/foundation/lazy/LazyListState;
+Landroidx/compose/foundation/lazy/LazyListItemProviderImpl;
+Landroidx/compose/foundation/lazy/LazyLayoutKt;
+Landroidx/compose/foundation/lazy/grid/LazyGridKt;
+Landroidx/compose/animation/core/Animatable;
+Landroidx/compose/animation/core/SpringAnimatorKt;
+
+# Activity / lifecycle / splash
+Landroidx/activity/ComponentActivity;
+Landroidx/activity/compose/ComponentActivityKt;
+Landroidx/core/splashscreen/SplashScreen;
+Landroidx/core/splashscreen/SplashScreen$Companion;
+Landroidx/lifecycle/ViewModelStore;
+Landroidx/lifecycle/ViewModelProvider;
+Landroidx/lifecycle/LifecycleRegistry;
+
+# Media3 / ExoPlayer hot path (service startup + playback)
+Lcom/example/hunterxmusic/service/MusicPlaybackService;
+Landroidx/media3/exoplayer/ExoPlayerImpl;
+Landroidx/media3/exoplayer/ExoPlayerImplInternal;
+Landroidx/media3/exoplayer/DefaultRenderersFactory;
+Landroidx/media3/exoplayer/audio/DefaultAudioSink;
+Landroidx/media3/exoplayer/source/ProgressiveMediaSource;
+Landroidx/media3/exoplayer/source/DefaultMediaSourceFactory;
+Landroidx/media3/datasource/DefaultDataSource;
+Landroidx/media3/session/MediaSessionImpl;
+Landroidx/media3/session/MediaSessionService;
+Landroidx/media3/common/MediaItem;
+
+# OkHttp streaming
+Lcom/squareup/okhttp3/OkHttpClient;
+Lcom/squareup/okhttp3/internal/connection/RealConnection;
+Lcom/squareup/okhttp3/internal/http/RealInterceptorChain;
+Lcom/squareup/okhttp3/Request;
+Lcom/squareup/okhttp3/Response;
+
+# Coil image loading
+Lcoil/compose/AsyncImageKt;
+Lcoil/request/ImageRequest$Builder;
+Lcoil/ImageLoader;
+
+# Room local DB
+Landroidx/room/Room;
+Landroidx/room/RoomDatabase;
+
+# Coroutines
+Lkotlinx/coroutines/Dispatchers;
+Lkotlinx/coroutines/internal/DispatchedTask;
+
+# App screens & engines
+Lcom/example/hunterxmusic/presentation/home/HomeScreenKt;
+Lcom/example/hunterxmusic/presentation/player/PlayerScreenKt;
+Lcom/example/hunterxmusic/presentation/player/MiniPlayerBarKt;
+Lcom/example/hunterxmusic/presentation/lyrics/SyncedLyricsViewKt;
+Lcom/example/hunterxmusic/data/player/MusicPlayerManager;
+Lcom/example/hunterxmusic/data/remote/AeroChaseCloudSyncManager;

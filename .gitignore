@@ -1,0 +1,48 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Android & Gradle
+.gradle/
+.kotlin/
+build/
+**/build/
+captures/
+.externalNativeBuild
+.cxx/
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# Local JDK
+jdk/
+
+# Compiled Binaries
+*.apk
+*.aab
+
+# System & OS
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext (HTTP) is allowed ONLY for the hosts that require it.
+  Everything else is forced to TLS — the app previously disabled TLS
+  enforcement globally for two HTTP endpoints.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Kugou lyrics CDN is HTTP-only -->
+        <domain includeSubdomains="true">kugou.com</domain>
+        <!-- Emulator-local dev AI server (10.0.2.2 = host loopback) -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
