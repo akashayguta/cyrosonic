@@ -22,7 +22,9 @@ data class BroadcastNotificationPayload(
     val imageUrl: String? = null,
     val targetTrackQuery: String? = null,
     val actionButtonText: String = "▶️ Listen Now",
-    val styleType: String = "PROMO"
+    val styleType: String = "PROMO",
+    val accentColorHex: String? = "#00F2FE",
+    val badgeText: String? = null
 )
 
 object OwnerNotificationManager {
@@ -85,13 +87,27 @@ object OwnerNotificationManager {
         }
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID_BROADCAST)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(com.example.hunterxmusic.R.drawable.ic_notification)
             .setContentTitle(payload.title)
             .setContentText(payload.message)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
+
+        // Apply admin custom accent color
+        if (!payload.accentColorHex.isNullOrBlank()) {
+            try {
+                val colorInt = android.graphics.Color.parseColor(payload.accentColorHex)
+                builder.setColor(colorInt)
+                builder.setColorized(true)
+            } catch (_: Exception) { }
+        }
+
+        // Apply admin custom badge tag
+        if (!payload.badgeText.isNullOrBlank()) {
+            builder.setSubText(payload.badgeText)
+        }
 
         if (bannerBitmap != null) {
             builder.setStyle(

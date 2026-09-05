@@ -374,29 +374,50 @@ app.get('/api/version', (req, res) => {
         featureFlags: {
             enableHighResAudio: true,
             enableTasteRadio: true,
-            enableOtaEqualizer: true,
-            bassBoostDb: 1.5
+            enableOtaEqualizer: true
         }
     });
 });
 
-// --- Server-Driven Broadcast API ---
+// --- Server-Driven Broadcast API with TTL & Design Control ---
 app.get('/api/broadcast/latest', (req, res) => {
+    const now = Date.now();
+    // Return only active, non-expired broadcast
+    const activeBroadcast = broadcasts.find(b => b.active !== false && (!b.expiresAt || b.expiresAt > now));
     res.json({
         success: true,
-        broadcast: broadcasts[0] || null
+        broadcast: activeBroadcast || null
     });
 });
 
 app.get('/api/broadcasts', (req, res) => {
+    const now = Date.now();
+    const list = broadcasts.map(b => ({
+        ...b,
+        isExpired: Boolean(b.expiresAt && b.expiresAt <= now),
+        isActive: Boolean(b.active !== false && (!b.expiresAt || b.expiresAt > now))
+    }));
     res.json({
         success: true,
-        broadcasts
+        broadcasts: list
     });
 });
 
 app.post('/api/broadcast', (req, res) => {
-    const { title, message, trackQuery, trackId, imageUrl, actionText, adminKey } = req.body;
+    const {
+        title,
+        message,
+        trackQuery,
+        trackId,
+        imageUrl,
+        actionText,
+        accentColor,
+        badgeText,
+        styleType,
+        ttlHours,
+        adminKey
+    } = req.body;
+
     const expectedKey = process.env.ADMIN_KEY;
     if (!expectedKey) {
         return res.status(500).json({ success: false, error: "ADMIN_KEY is not configured on Render server environment variables." });
@@ -407,6 +428,10 @@ app.post('/api/broadcast', (req, res) => {
     if (!title || !message) {
         return res.status(400).json({ success: false, error: "Title and message are required" });
     }
+
+    const hours = Number(ttlHours);
+    const expiresAt = (!isNaN(hours) && hours > 0) ? (Date.now() + hours * 3600 * 1000) : null;
+
     const newBc = {
         id: `bc_${Date.now()}`,
         title: title.trim(),
@@ -416,16 +441,75 @@ app.post('/api/broadcast', (req, res) => {
         trackUrl: trackId ? `https://cyrosonic.com/track/${trackId}` : 'https://cyrosonic.com',
         imageUrl: (imageUrl || '').trim(),
         actionText: (actionText || '▶️ Listen Now').trim(),
+        accentColor: (accentColor || '#00F2FE').trim(),
+        badgeText: (badgeText || '⚡ ANNOUNCEMENT').trim(),
+        styleType: (styleType || 'SERVER_BROADCAST').trim(),
+        ttlHours: hours > 0 ? hours : 0,
+        expiresAt: expiresAt,
+        active: true,
         timestamp: Date.now()
     };
+
     broadcasts.unshift(newBc);
     if (broadcasts.length > 50) broadcasts = broadcasts.slice(0, 50);
     saveBroadcasts(broadcasts);
-    console.log(`[Broadcast Dispatched] "${newBc.title}" to all CyroSonic devices.`);
+    console.log(`[Broadcast Dispatched] "${newBc.title}" (Expires in: ${hours > 0 ? hours + 'h' : 'Never'}, Color: ${newBc.accentColor})`);
     res.json({
         success: true,
         message: "Broadcast published successfully to all CyroSonic devices!",
         broadcast: newBc
+    });
+});
+
+app.post('/api/broadcast/stop', (req, res) => {
+    const { adminKey } = req.body;
+    const expectedKey = process.env.ADMIN_KEY;
+    if (!expectedKey) {
+        return res.status(500).json({ success: false, error: "ADMIN_KEY is not configured on Render." });
+    }
+    if (adminKey !== expectedKey && req.headers['x-admin-key'] !== expectedKey) {
+        return res.status(401).json({ success: false, error: "Unauthorized: Invalid Admin Key" });
+    }
+
+    let stoppedCount = 0;
+    broadcasts.forEach(b => {
+        if (b.active !== false) {
+            b.active = false;
+            stoppedCount++;
+        }
+    });
+    saveBroadcasts(broadcasts);
+    console.log(`[Broadcasts Deactivated] Stopped ${stoppedCount} active broadcasts.`);
+    res.json({ success: true, message: `Successfully stopped ${stoppedCount} active broadcast(s).` });
+});
+
+app.delete('/api/broadcast/:id', (req, res) => {
+    const id = req.params.id;
+    const key = req.headers['x-admin-key'] || req.query.adminKey || req.body?.adminKey;
+    const expectedKey = process.env.ADMIN_KEY;
+    if (!expectedKey) {
+        return res.status(500).json({ success: false, error: "ADMIN_KEY is not configured on Render." });
+    }
+    if (key !== expectedKey) {
+        return res.status(401).json({ success: false, error: "Unauthorized: Invalid Admin Key" });
+    }
+
+    const index = broadcasts.findIndex(b => b.id === id);
+    if (index === -1) {
+        return res.status(404).json({ success: false, error: "Broadcast not found" });
+    }
+    broadcasts.splice(index, 1);
+    saveBroadcasts(broadcasts);
+    res.json({ success: true, message: "Broadcast deleted from archive." });
+});
+
+app.get('/api/admin/metrics', (req, res) => {
+    res.json({
+        uptimeSeconds: Math.floor(process.uptime()),
+        activePartyRooms: partyRooms.size,
+        totalBroadcasts: broadcasts.length,
+        memoryUsageMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+        serverTimeUtc: new Date().toISOString()
     });
 });
 
@@ -434,7 +518,7 @@ app.get('/admin', (req, res) => {
     res.status(404).send("Page not found");
 });
 
-// --- Secret Admin System (/adminbyhunter) & Multi-Language Dispatcher ---
+// --- Secret Admin System (/adminbyhunter) & Master Studio ---
 app.get('/adminbyhunter', (req, res) => {
     res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -445,149 +529,485 @@ app.get('/adminbyhunter', (req, res) => {
     <link rel="icon" href="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            background: #080B11;
-            color: #E2E8F0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            min-height: 100vh;
-            padding: 30px 20px;
+        :root {
+            --bg: #06090E;
+            --surface: rgba(15, 23, 42, 0.85);
+            --border: rgba(255, 255, 255, 0.08);
+            --primary: #00F2FE;
+            --accent: #00F2FE;
         }
-        .container { max-width: 1100px; margin: 0 auto; }
+        body {
+            background: var(--bg);
+            color: #F8FAFC;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+            min-height: 100vh;
+            padding: 24px 16px 60px;
+        }
+        .container { max-width: 1280px; margin: 0 auto; }
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 28px;
-            padding-bottom: 18px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+            gap: 12px;
         }
-        .logo { font-size: 24px; font-weight: 800; background: linear-gradient(135deg, #00F2FE, #4FACFE); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .tag { font-size: 11px; font-weight: 700; background: rgba(0, 242, 254, 0.15); color: #00F2FE; padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(0, 242, 254, 0.3); }
-        .grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 24px; }
-        @media (max-width: 850px) { .grid { grid-template-columns: 1fr; } }
+        .brand-title {
+            font-size: 24px;
+            font-weight: 900;
+            letter-spacing: 1px;
+            background: linear-gradient(135deg, #00F2FE, #8B5CF6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .badge-secret {
+            font-size: 11px;
+            font-weight: 800;
+            background: rgba(0, 242, 254, 0.12);
+            color: #00F2FE;
+            padding: 5px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(0, 242, 254, 0.25);
+            letter-spacing: 1px;
+        }
+        .metrics-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+        .metric-pill {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            padding: 10px 16px;
+            border-radius: 12px;
+            font-size: 12px;
+            color: #94A3B8;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .metric-pill strong { color: #FFF; font-weight: 700; }
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 1.15fr 0.85fr;
+            gap: 24px;
+        }
+        @media (max-width: 980px) { .grid-layout { grid-template-columns: 1fr; } }
         .card {
-            background: rgba(18, 24, 38, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 18px;
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 20px;
             padding: 24px;
-            backdrop-filter: blur(16px);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
             margin-bottom: 24px;
         }
-        h2 { font-size: 18px; font-weight: 700; margin-bottom: 16px; color: #FFF; display: flex; align-items: center; gap: 8px; }
-        .form-group { margin-bottom: 16px; }
-        label { display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: #94A3B8; margin-bottom: 6px; }
-        input, textarea {
+        .card-header {
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .form-group { margin-bottom: 18px; }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 700;
+            color: #94A3B8;
+            margin-bottom: 7px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        input, textarea, select {
             width: 100%;
-            background: rgba(10, 14, 23, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 12px;
-            padding: 12px 14px;
+            background: rgba(10, 15, 29, 0.8);
+            border: 1px solid var(--border);
             color: #FFF;
+            padding: 12px 14px;
+            border-radius: 12px;
             font-size: 14px;
             outline: none;
-            transition: border-color 0.2s;
+            transition: all 0.2s;
         }
-        input:focus, textarea:focus { border-color: #00F2FE; }
-        textarea { resize: vertical; min-height: 80px; }
-        .btn-broadcast {
-            width: 100%;
-            background: linear-gradient(135deg, #00F2FE, #0072FF);
-            color: #000;
+        input:focus, textarea:focus, select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 16px rgba(0, 242, 254, 0.2);
+        }
+        textarea { resize: vertical; min-height: 70px; }
+        .color-chips {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        .color-chip {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .color-chip:hover { transform: scale(1.15); }
+        .color-chip.active { border-color: #FFF; transform: scale(1.15); box-shadow: 0 0 12px currentColor; }
+        .color-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .color-picker-input {
+            width: 44px;
+            height: 44px;
+            padding: 0;
             border: none;
             border-radius: 12px;
+            cursor: pointer;
+            background: transparent;
+        }
+        .btn-submit {
+            width: 100%;
             padding: 14px;
+            border-radius: 14px;
+            border: none;
+            background: linear-gradient(135deg, var(--accent), #8B5CF6);
+            color: #000;
             font-size: 15px;
             font-weight: 800;
             cursor: pointer;
-            transition: transform 0.15s;
+            transition: all 0.2s;
+            box-shadow: 0 8px 24px rgba(0, 242, 254, 0.3);
         }
-        .btn-broadcast:hover { transform: translateY(-2px); }
-        /* Code Generator Tabs */
-        .code-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
-        .code-tab-btn {
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #94A3B8;
+        .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0, 242, 254, 0.45); }
+        .btn-stop {
+            background: #EF4444;
+            color: #FFF;
+            border: none;
             padding: 8px 14px;
-            border-radius: 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 700;
             cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-stop:hover { background: #DC2626; }
+        /* Android Live Phone Simulator */
+        .simulator-box {
+            background: #000;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+            padding: 16px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+            margin-bottom: 24px;
+        }
+        .phone-notch-bar {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #94A3B8;
+            margin-bottom: 12px;
+            padding: 0 4px;
+        }
+        .notif-card {
+            background: #1E293B;
+            border-radius: 16px;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            position: relative;
+            overflow: hidden;
+        }
+        .notif-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #94A3B8;
+            margin-bottom: 8px;
+        }
+        .notif-app-icon {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            background: var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 10px;
+        }
+        .notif-badge-tag {
+            font-size: 10px;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--accent);
+            text-transform: uppercase;
+        }
+        .notif-title {
+            font-size: 15px;
+            font-weight: 800;
+            color: #FFF;
+            margin-bottom: 4px;
+        }
+        .notif-msg {
+            font-size: 13px;
+            color: #CBD5E1;
+            line-height: 1.4;
+            margin-bottom: 10px;
+        }
+        .notif-banner {
+            width: 100%;
+            height: 150px;
+            border-radius: 10px;
+            object-fit: cover;
+            margin-bottom: 10px;
+            background: #0F172A;
+            display: block;
+        }
+        .notif-action-btn {
+            display: inline-block;
+            padding: 7px 14px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border);
+            color: var(--accent);
             font-size: 12px;
             font-weight: 700;
         }
-        .code-tab-btn.active {
-            background: rgba(0, 242, 254, 0.2);
-            color: #00F2FE;
-            border-color: rgba(0, 242, 254, 0.4);
+        /* Code Box */
+        .code-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: #94A3B8;
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .tab-btn.active {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
         }
         pre {
-            background: #05070D;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: #0A0F1D;
+            border: 1px solid var(--border);
             border-radius: 12px;
             padding: 14px;
             font-size: 12px;
-            color: #A5F3FC;
+            color: #A5B4FC;
             overflow-x: auto;
             white-space: pre-wrap;
+            position: relative;
         }
+        .btn-copy {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--border);
+            color: #FFF;
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .btn-copy:hover { background: rgba(255, 255, 255, 0.2); }
+        /* Table */
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { padding: 10px 12px; text-align: left; font-size: 12px; border-bottom: 1px solid var(--border); }
+        th { color: #94A3B8; font-weight: 700; }
         .toast {
             position: fixed;
             bottom: 24px;
             right: 24px;
             padding: 14px 22px;
             border-radius: 12px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
+            color: #FFF;
             display: none;
-            z-index: 100;
+            z-index: 999;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <div class="logo">⚡ CYROSONIC ADMIN</div>
-            <div class="tag">SECRET PORTAL • /adminbyhunter</div>
+            <div>
+                <div class="brand-title">⚡ CYROSONIC ADMIN STUDIO</div>
+                <div style="font-size: 12px; color: #64748B; margin-top: 2px;">Cloud Broadcasts • Design Engine • Live Sync Controls</div>
+            </div>
+            <div class="badge-secret">CONFIDENTIAL • /adminbyhunter</div>
         </header>
 
-        <div class="grid">
-            <div class="card">
-                <h2>📢 Dispatch Live Cloud Broadcast</h2>
-                <form id="broadcastForm">
-                    <div class="form-group">
-                        <label>Admin Password (Configured in Render ADMIN_KEY)</label>
-                        <input type="password" id="adminKey" placeholder="Enter ADMIN_KEY" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Notification Title</label>
-                        <input type="text" id="title" placeholder="e.g. 🎧 Cosmic Chill Session is Live" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Message Content</label>
-                        <textarea id="message" placeholder="e.g. Listen to the freshest melodic techno release now streaming lossless." required></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>Track Search Query or Video ID (Optional)</label>
-                        <input type="text" id="trackQuery" placeholder="e.g. Blinding Lights The Weeknd or 4NR4vK2ZlA">
-                    </div>
-                    <div class="form-group">
-                        <label>Banner Image URL (Optional)</label>
-                        <input type="url" id="imageUrl" placeholder="https://images.unsplash.com/...">
-                    </div>
-                    <button type="submit" class="btn-broadcast">🚀 Publish Broadcast Instantly</button>
-                </form>
-            </div>
+        <div class="metrics-bar" id="metricsBar">
+            <div class="metric-pill"><span>🟢 Server Status:</span> <strong style="color:#10B981;">ONLINE</strong></div>
+            <div class="metric-pill"><span>🎧 Active Listening Parties:</span> <strong id="mParties">0</strong></div>
+            <div class="metric-pill"><span>📢 Broadcast History:</span> <strong id="mBroadcasts">0</strong></div>
+            <div class="metric-pill"><span>⏱️ Server Uptime:</span> <strong id="mUptime">0s</strong></div>
+        </div>
 
+        <div class="grid-layout">
+            <!-- Left Column: Broadcast Design Studio -->
             <div>
                 <div class="card">
-                    <h2>💻 Script Dispatchers</h2>
-                    <p style="font-size:12px; color:#94A3B8; margin-bottom:12px;">Trigger broadcasts directly from code:</p>
-                    <div class="code-tabs">
-                        <button class="code-tab-btn active" onclick="showTab('py')">🐍 Python</button>
-                        <button class="code-tab-btn" onclick="showTab('curl')">⚡ cURL</button>
-                        <button class="code-tab-btn" onclick="showTab('cpp')">🛡️ C++</button>
-                        <button class="code-tab-btn" onclick="showTab('node')">🚀 Node.js</button>
+                    <div class="card-header">
+                        <span>📢 Dispatch New Broadcast</span>
+                        <span style="font-size: 11px; color: #94A3B8;">Real-Time Mobile Push</span>
                     </div>
-                    <pre id="codeBox"></pre>
+
+                    <form id="broadcastForm">
+                        <div class="form-group">
+                            <label>Admin Key (Set in Render Dashboard)</label>
+                            <input type="password" id="adminKey" placeholder="Enter ADMIN_KEY" required>
+                            <div style="margin-top:6px; display:flex; align-items:center; gap:6px;">
+                                <input type="checkbox" id="rememberKey" style="width:auto;" checked>
+                                <span style="font-size:11px; color:#94A3B8;">Remember key in this browser</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Notification Title</label>
+                            <input type="text" id="title" placeholder="e.g. 🎧 Lost In The Echo • Lossless Drop" value="🎧 New Lossless Premiere" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Message Content</label>
+                            <textarea id="message" placeholder="What should millions of listeners hear today?" required>Experience the freshest melodic drop in pure master-tier audio quality on CyroSonic.</textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Badge Tag & Category</label>
+                            <input type="text" id="badgeText" placeholder="e.g. 👑 OWNER DROP or 🔥 TRENDING" value="👑 OWNER EXCLUSIVE">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Theme Accent Color</label>
+                            <div class="color-row">
+                                <input type="color" id="accentColor" class="color-picker-input" value="#00F2FE">
+                                <input type="text" id="accentColorHex" value="#00F2FE" style="max-width:120px;">
+                                <div class="color-chips">
+                                    <div class="color-chip active" style="background:#00F2FE;" onclick="pickColor('#00F2FE')"></div>
+                                    <div class="color-chip" style="background:#FFD700;" onclick="pickColor('#FFD700')"></div>
+                                    <div class="color-chip" style="background:#FF007F;" onclick="pickColor('#FF007F')"></div>
+                                    <div class="color-chip" style="background:#8B5CF6;" onclick="pickColor('#8B5CF6')"></div>
+                                    <div class="color-chip" style="background:#10B981;" onclick="pickColor('#10B981')"></div>
+                                    <div class="color-chip" style="background:#EF4444;" onclick="pickColor('#EF4444')"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Banner Artwork Image URL (Optional)</label>
+                            <input type="url" id="imageUrl" placeholder="https://images.unsplash.com/... or leave blank" value="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Target Action / Destination</label>
+                            <input type="text" id="trackQuery" placeholder="Song Name, Video ID, or Party Code (e.g. Starboy or 849201)" value="Starboy The Weeknd">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Action Button Label</label>
+                            <input type="text" id="actionText" placeholder="e.g. ▶️ Listen Now or 🚀 Join Party" value="▶️ Listen Now">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Broadcast Lifetime (TTL Expiration)</label>
+                            <select id="ttlHours">
+                                <option value="1">⚡ 1 Hour (Urgent Flash Drop)</option>
+                                <option value="6">⏳ 6 Hours</option>
+                                <option value="12">🌙 12 Hours</option>
+                                <option value="24" selected>☀️ 24 Hours (Standard Daily Drop)</option>
+                                <option value="72">📅 3 Days</option>
+                                <option value="168">🗓️ 7 Days</option>
+                                <option value="0">♾️ Permanent (Until manually stopped)</option>
+                            </select>
+                            <div style="font-size:11px; color:#64748B; margin-top:4px;">When expired, future app installs will NEVER receive this broadcast.</div>
+                        </div>
+
+                        <button type="submit" class="btn-submit" id="btnPublish">🚀 Publish Broadcast to All Devices</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Right Column: Live Simulator, Script Hub & Active Controls -->
+            <div>
+                <!-- 📱 Android Phone Simulator -->
+                <div class="simulator-box">
+                    <div class="phone-notch-bar">
+                        <span>9:41</span>
+                        <span>📶 5G • 100% 🔋</span>
+                    </div>
+                    <div class="notif-card" id="previewCard">
+                        <div class="notif-header">
+                            <div class="notif-app-icon" id="previewIcon">CS</div>
+                            <span style="font-weight:800; color:#FFF;">CyroSonic</span>
+                            <span>•</span>
+                            <span class="notif-badge-tag" id="previewBadge">👑 OWNER EXCLUSIVE</span>
+                            <span style="margin-left:auto; font-size:11px;">Just now</span>
+                        </div>
+                        <div class="notif-title" id="previewTitle">🎧 New Lossless Premiere</div>
+                        <div class="notif-msg" id="previewMsg">Experience the freshest melodic drop in pure master-tier audio quality on CyroSonic.</div>
+                        <img src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800" id="previewImg" class="notif-banner" alt="Banner">
+                        <div class="notif-action-btn" id="previewBtn">▶️ Listen Now</div>
+                    </div>
+                </div>
+
+                <!-- 💻 Multi-Language Code Dispatchers -->
+                <div class="card">
+                    <div class="card-header">
+                        <span>💻 Script Dispatchers</span>
+                        <span style="font-size:11px; color:#94A3B8;">Dynamic Code Sync</span>
+                    </div>
+                    <div class="code-tabs">
+                        <button class="tab-btn active" onclick="switchLang('py')">🐍 Python</button>
+                        <button class="tab-btn" onclick="switchLang('curl')">⚡ cURL</button>
+                        <button class="tab-btn" onclick="switchLang('cpp')">🛡️ C++</button>
+                        <button class="tab-btn" onclick="switchLang('node')">🚀 Node.js</button>
+                    </div>
+                    <div style="position:relative;">
+                        <button class="btn-copy" onclick="copyCode()">📋 Copy</button>
+                        <pre id="codeSnippet"></pre>
+                    </div>
+                </div>
+
+                <!-- ⏹️ Active Broadcast & History -->
+                <div class="card">
+                    <div class="card-header">
+                        <span>📢 Active Broadcast Control</span>
+                        <button class="btn-stop" onclick="stopActiveBroadcasts()">⏹️ Stop All Active</button>
+                    </div>
+                    <div id="activeBcContent" style="font-size:13px; color:#94A3B8;">Loading status...</div>
+
+                    <div style="margin-top:20px; font-weight:800; font-size:14px;">Recent Broadcast Archive</div>
+                    <div style="max-height:220px; overflow-y:auto;">
+                        <table id="historyTable">
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Status</th>
+                                    <th>Expires</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -596,83 +1016,310 @@ app.get('/adminbyhunter', (req, res) => {
     <div id="toast" class="toast"></div>
 
     <script>
-        const snippets = {
-            py: \`import requests
+        let currentLang = 'py';
+        const rememberedKey = localStorage.getItem('cyrosonic_admin_key');
+        if (rememberedKey) {
+            document.getElementById('adminKey').value = rememberedKey;
+        }
 
-res = requests.post('https://cyrosonic.com/api/broadcast', json={
-    'adminKey': 'YOUR_RENDER_ADMIN_KEY',
-    'title': '⚡ Live Announcement',
-    'message': 'Fresh music discovery is waiting for you.',
-    'trackQuery': 'Starboy The Weeknd'
-})
-print(res.json())\`,
-            curl: \`curl -X POST https://cyrosonic.com/api/broadcast \\\\
+        function pickColor(hex) {
+            document.getElementById('accentColor').value = hex;
+            document.getElementById('accentColorHex').value = hex;
+            document.querySelectorAll('.color-chip').forEach(c => {
+                c.classList.toggle('active', c.style.backgroundColor === hex || rgbToHex(c.style.backgroundColor) === hex.toLowerCase());
+            });
+            updatePreview();
+        }
+
+        function rgbToHex(rgb) {
+            const result = rgb.match(/\\d+/g);
+            if (!result) return '';
+            return '#' + ((1 << 24) + (parseInt(result[0]) << 16) + (parseInt(result[1]) << 8) + parseInt(result[2])).toString(16).slice(1);
+        }
+
+        document.getElementById('accentColor').addEventListener('input', (e) => {
+            document.getElementById('accentColorHex').value = e.target.value;
+            updatePreview();
+        });
+        document.getElementById('accentColorHex').addEventListener('input', (e) => {
+            if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                document.getElementById('accentColor').value = e.target.value;
+                updatePreview();
+            }
+        });
+
+        const liveInputs = ['title', 'message', 'badgeText', 'imageUrl', 'actionText', 'trackQuery', 'adminKey', 'ttlHours'];
+        liveInputs.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', updatePreview);
+        });
+
+        function updatePreview() {
+            const title = document.getElementById('title').value || 'Notification Title';
+            const msg = document.getElementById('message').value || 'Message body...';
+            const badge = document.getElementById('badgeText').value || 'CYROSONIC';
+            const color = document.getElementById('accentColor').value || '#00F2FE';
+            const img = document.getElementById('imageUrl').value;
+            const btn = document.getElementById('actionText').value || '▶️ Listen Now';
+
+            document.documentElement.style.setProperty('--accent', color);
+            document.getElementById('previewTitle').textContent = title;
+            document.getElementById('previewMsg').textContent = msg;
+            document.getElementById('previewBadge').textContent = badge;
+            document.getElementById('previewBadge').style.color = color;
+            document.getElementById('previewIcon').style.background = color;
+            document.getElementById('previewBtn').textContent = btn;
+            document.getElementById('previewBtn').style.color = color;
+
+            const imgEl = document.getElementById('previewImg');
+            if (img && img.startsWith('http')) {
+                imgEl.src = img;
+                imgEl.style.display = 'block';
+            } else {
+                imgEl.style.display = 'none';
+            }
+
+            renderSnippet();
+        }
+
+        function renderSnippet() {
+            const key = document.getElementById('adminKey').value || 'YOUR_RENDER_ADMIN_KEY';
+            const title = document.getElementById('title').value || 'Announcement';
+            const msg = document.getElementById('message').value || 'Message';
+            const color = document.getElementById('accentColor').value || '#00F2FE';
+            const badge = document.getElementById('badgeText').value || 'CYROSONIC';
+            const track = document.getElementById('trackQuery').value || 'Starboy';
+            const img = document.getElementById('imageUrl').value || '';
+            const action = document.getElementById('actionText').value || '▶️ Listen Now';
+            const ttl = document.getElementById('ttlHours').value || '24';
+
+            const payload = {
+                adminKey: key,
+                title: title,
+                message: msg,
+                trackQuery: track,
+                imageUrl: img,
+                actionText: action,
+                accentColor: color,
+                badgeText: badge,
+                ttlHours: Number(ttl)
+            };
+
+            const jsonStr = JSON.stringify(payload, null, 2);
+
+            let code = '';
+            if (currentLang === 'py') {
+                code = \`import requests
+
+payload = \${JSON.stringify(payload, null, 4)}
+
+res = requests.post('https://cyrosonic.com/api/broadcast', json=payload)
+print("Status:", res.status_code)
+print(res.json())\`;
+            } else if (currentLang === 'curl') {
+                code = \`curl -X POST https://cyrosonic.com/api/broadcast \\\\
   -H "Content-Type: application/json" \\\\
-  -d '{"adminKey":"YOUR_RENDER_ADMIN_KEY","title":"⚡ Live Announcement","message":"Fresh tracks live now."}'\`,
-            cpp: \`#include <iostream>
+  -d '\${JSON.stringify(payload)}'\`;
+            } else if (currentLang === 'cpp') {
+                const escaped = JSON.stringify(JSON.stringify(payload));
+                code = \`#include <iostream>
 #include <curl/curl.h>
 
 int main() {
     CURL* curl = curl_easy_init();
     if(curl) {
+        struct curl_slist* headers = NULL;
+        headers = curl_slist_append(headers, "Content-Type: application/json");
         curl_easy_setopt(curl, CURLOPT_URL, "https://cyrosonic.com/api/broadcast");
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "{\\"adminKey\\":\\"YOUR_RENDER_ADMIN_KEY\\",\\"title\\":\\"⚡ C++ Broadcast\\",\\"message\\":\\"Automated push.\\"}");
-        curl_easy_perform(curl);
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, \${escaped});
+        CURLcode res = curl_easy_perform(curl);
         curl_easy_cleanup(curl);
     }
     return 0;
-}\`,
-            node: \`const res = await fetch('https://cyrosonic.com/api/broadcast', {
+}\`;
+            } else if (currentLang === 'node') {
+                code = \`const res = await fetch('https://cyrosonic.com/api/broadcast', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    adminKey: 'YOUR_RENDER_ADMIN_KEY',
-    title: '⚡ Live Drop',
-    message: 'New release streaming on CyroSonic.'
-  })
+  body: JSON.stringify(\${jsonStr})
 });
-console.log(await res.json());\`
-        };
+const data = await res.json();
+console.log(data);\`;
+            }
 
-        function showTab(lang) {
-            document.querySelectorAll('.code-tab-btn').forEach(b => b.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById('codeBox').textContent = snippets[lang];
+            document.getElementById('codeSnippet').textContent = code;
         }
-        showTab('py');
 
+        function switchLang(lang) {
+            currentLang = lang;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            renderSnippet();
+        }
+
+        function copyCode() {
+            navigator.clipboard.writeText(document.getElementById('codeSnippet').textContent);
+            showToast('📋 Code copied to clipboard!', '#10B981');
+        }
+
+        function showToast(msg, bg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.style.background = bg;
+            t.style.display = 'block';
+            setTimeout(() => { t.style.display = 'none'; }, 4000);
+        }
+
+        // Form Submit
         document.getElementById('broadcastForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const toast = document.getElementById('toast');
+            const key = document.getElementById('adminKey').value;
+            if (document.getElementById('rememberKey').checked) {
+                localStorage.setItem('cyrosonic_admin_key', key);
+            } else {
+                localStorage.removeItem('cyrosonic_admin_key');
+            }
+
+            const payload = {
+                adminKey: key,
+                title: document.getElementById('title').value,
+                message: document.getElementById('message').value,
+                trackQuery: document.getElementById('trackQuery').value,
+                imageUrl: document.getElementById('imageUrl').value,
+                actionText: document.getElementById('actionText').value,
+                accentColor: document.getElementById('accentColor').value,
+                badgeText: document.getElementById('badgeText').value,
+                ttlHours: document.getElementById('ttlHours').value
+            };
+
+            const btn = document.getElementById('btnPublish');
+            btn.disabled = true;
+            btn.textContent = '⏳ Dispatching Broadcast...';
+
             try {
                 const res = await fetch('/api/broadcast', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        adminKey: document.getElementById('adminKey').value,
-                        title: document.getElementById('title').value,
-                        message: document.getElementById('message').value,
-                        trackQuery: document.getElementById('trackQuery').value,
-                        imageUrl: document.getElementById('imageUrl').value
-                    })
+                    body: JSON.stringify(payload)
                 });
                 const data = await res.json();
                 if (data.success) {
-                    toast.textContent = '🚀 Broadcast successfully published!';
-                    toast.style.background = '#10B981';
+                    showToast('🚀 Broadcast published successfully to all devices!', '#10B981');
+                    loadData();
                 } else {
-                    toast.textContent = '❌ Error: ' + (data.error || 'Failed');
-                    toast.style.background = '#EF4444';
+                    showToast('❌ Error: ' + (data.error || 'Failed to publish'), '#EF4444');
                 }
-                toast.style.display = 'block';
-                setTimeout(() => toast.style.display = 'none', 4000);
             } catch (err) {
-                toast.textContent = '❌ Network Error: ' + err.message;
-                toast.style.background = '#EF4444';
-                toast.style.display = 'block';
-                setTimeout(() => toast.style.display = 'none', 4000);
+                showToast('❌ Network error: ' + err.message, '#EF4444');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🚀 Publish Broadcast to All Devices';
             }
         });
+
+        async function stopActiveBroadcasts() {
+            const key = document.getElementById('adminKey').value;
+            if (!key) return showToast('Please enter your Admin Key first', '#EF4444');
+            if (!confirm('Are you sure you want to stop all active broadcasts? New devices will no longer receive them.')) return;
+
+            try {
+                const res = await fetch('/api/broadcast/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ adminKey: key })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message, '#10B981');
+                    loadData();
+                } else {
+                    showToast('Error: ' + data.error, '#EF4444');
+                }
+            } catch (e) {
+                showToast('Network error: ' + e.message, '#EF4444');
+            }
+        }
+
+        async function deleteBroadcast(id) {
+            const key = document.getElementById('adminKey').value;
+            if (!key) return showToast('Please enter your Admin Key first', '#EF4444');
+            if (!confirm('Delete this broadcast from history?')) return;
+
+            try {
+                const res = await fetch('/api/broadcast/' + id, {
+                    method: 'DELETE',
+                    headers: { 'x-admin-key': key }
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Deleted broadcast', '#10B981');
+                    loadData();
+                } else {
+                    showToast('Error: ' + data.error, '#EF4444');
+                }
+            } catch (e) {
+                showToast('Network error: ' + e.message, '#EF4444');
+            }
+        }
+
+        async function loadData() {
+            try {
+                // Fetch metrics
+                const mRes = await fetch('/api/admin/metrics');
+                const mData = await mRes.json();
+                document.getElementById('mParties').textContent = mData.activePartyRooms || 0;
+                document.getElementById('mBroadcasts').textContent = mData.totalBroadcasts || 0;
+                document.getElementById('mUptime').textContent = Math.floor(mData.uptimeSeconds / 60) + ' min';
+
+                // Fetch broadcasts
+                const bRes = await fetch('/api/broadcasts');
+                const bData = await bRes.json();
+                const list = bData.broadcasts || [];
+
+                const active = list.find(b => b.isActive);
+                const activeBox = document.getElementById('activeBcContent');
+                if (active) {
+                    const timeLeft = active.expiresAt ? Math.max(0, Math.round((active.expiresAt - Date.now()) / 3600000)) + 'h remaining' : 'Permanent';
+                    activeBox.innerHTML = \`
+                        <div style="background:rgba(16,185,129,0.1); border:1px solid #10B981; border-radius:12px; padding:12px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <strong style="color:#FFF;">\${active.title}</strong>
+                                <span style="font-size:11px; color:#10B981; font-weight:800;">🟢 LIVE (\${timeLeft})</span>
+                            </div>
+                            <div style="font-size:12px; color:#CBD5E1; margin-top:4px;">\${active.message}</div>
+                        </div>
+                    \`;
+                } else {
+                    activeBox.innerHTML = '<span style="color:#64748B;">No broadcast is currently active. Devices will receive normal recommendations.</span>';
+                }
+
+                // Table
+                const tbody = document.getElementById('historyBody');
+                tbody.innerHTML = '';
+                list.slice(0, 15).forEach(b => {
+                    const tr = document.createElement('tr');
+                    const statusHtml = b.isActive
+                        ? '<span style="color:#10B981; font-weight:700;">Active</span>'
+                        : (b.isExpired ? '<span style="color:#64748B;">Expired</span>' : '<span style="color:#EF4444;">Stopped</span>');
+                    const expiresText = b.expiresAt ? new Date(b.expiresAt).toLocaleTimeString() : 'None';
+                    tr.innerHTML = \`
+                        <td><strong style="color:#FFF;">\${b.title}</strong></td>
+                        <td>\${statusHtml}</td>
+                        <td>\${expiresText}</td>
+                        <td>
+                            <button onclick="deleteBroadcast('\${b.id}')" style="background:transparent; border:none; color:#EF4444; cursor:pointer; font-size:14px;">🗑️</button>
+                        </td>
+                    \`;
+                    tbody.appendChild(tr);
+                });
+
+            } catch (_) {}
+        }
+
+        updatePreview();
+        loadData();
+        setInterval(loadData, 10000);
     </script>
 </body>
 </html>`);
