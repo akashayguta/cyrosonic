@@ -932,7 +932,8 @@ app.get('/party/:code', (req, res) => {
 </html>`);
 });
 
-app.listen(port, () => {
-    console.log(`CyroSonic Production API & 3D Web Server listening at http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+    const publicUrl = process.env.RENDER ? 'https://cyrosonic.com' : `http://localhost:${port}`;
+    console.log(`CyroSonic Production API & 3D Web Server active at ${publicUrl} (internal container port: ${port})`);
 });
 
