@@ -221,12 +221,13 @@ class MusicPlaybackService : MediaSessionService() {
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
             .build().apply {
-                // Audio focus management
+                // Audio focus management: set handleAudioFocus = false so incoming
+                // notifications (WhatsApp, SMS, etc.) NEVER auto-pause playback.
                 val audioAttributes = AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .setUsage(C.USAGE_MEDIA)
                     .build()
-                setAudioAttributes(audioAttributes, true)
+                setAudioAttributes(audioAttributes, false)
                 setHandleAudioBecomingNoisy(true)
                 setWakeMode(C.WAKE_MODE_NETWORK)
 
@@ -356,9 +357,7 @@ class MusicPlaybackService : MediaSessionService() {
         try {
             val track = HunterApplication.dependencies.musicPlayerManager
                 .playbackState.value.currentTrack ?: return
-            val link = if (Regex("^[a-zA-Z0-9_-]{11}$").matches(track.id)) {
-                "https://www.youtube.com/watch?v=${track.id}"
-            } else null
+            val link = "https://cyrosonic.com/track/${track.id}"
             val shareText = buildString {
                 append("\"").append(track.title).append("\" by ").append(track.artist)
                 if (link != null) append("\n\n").append(link)

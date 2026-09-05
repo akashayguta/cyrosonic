@@ -621,10 +621,11 @@ var introVisible by remember { mutableStateOf(false) }
                     ) {
                         Scaffold(
                             bottomBar = {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    // Sleek AMOLED MiniPlayer Capsule â€” now with fluid shared-element handoff to full player
+                                Column {
+                                    val isSettingsOrSubScreenOpen = showSettingsOverlay || showCreditsScreen || showTimeMachineDialog
+                                    // Sleek AMOLED MiniPlayer Capsule — hidden when in Settings or Settings sub-screens
                                     AnimatedVisibility(
-                                        visible = hasActiveTrack && !isPlayerExpanded,
+                                        visible = hasActiveTrack && !isPlayerExpanded && !isSettingsOrSubScreenOpen,
                                         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                                         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                                     ) {
@@ -911,8 +912,9 @@ var introVisible by remember { mutableStateOf(false) }
 
                         // Ubiquitous Persistent MiniPlayer for all sub-screens (Playlists, Moods, Artists, AI Chat, etc.)
                         val isSubScreenOpen = openPlaylistId != null || openMoodKey != null || showArtistPortal || showAiChat || showOwnerPortal
+                        val isSettingsOrSubScreenOpen = showSettingsOverlay || showCreditsScreen || showTimeMachineDialog
                         AnimatedVisibility(
-                            visible = isSubScreenOpen && hasActiveTrack && !isPlayerExpanded && !showSettingsOverlay,
+                            visible = isSubScreenOpen && hasActiveTrack && !isPlayerExpanded && !isSettingsOrSubScreenOpen,
                             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                             modifier = Modifier
@@ -1179,6 +1181,23 @@ var introVisible by remember { mutableStateOf(false) }
         val uri = incomingIntent?.data ?: return
         if ((uri.scheme == "https" && uri.host?.contains("cyrosonic.com") == true) || uri.scheme == "cyrosonic") {
             val pathSegments = uri.pathSegments
+
+            // 1. Shared Listening Party Deep Link (e.g. cyrosonic://party/849201 or https://cyrosonic.com/party/849201)
+            val partyCode = when {
+                pathSegments.size >= 2 && pathSegments[0] == "party" -> pathSegments[1]
+                uri.host == "party" -> pathSegments.firstOrNull()
+                else -> null
+            }
+            if (!partyCode.isNullOrBlank()) {
+                com.example.hunterxmusic.data.party.ListeningPartyManager.joinParty(partyCode, dependencies.musicPlayerManager) { success, _ ->
+                    if (success) {
+                        openPlayerRequested = true
+                    }
+                }
+                return
+            }
+
+            // 2. Track Share Deep Link (e.g. cyrosonic://track/xyz or https://cyrosonic.com/track/xyz)
             val trackId = when {
                 pathSegments.size >= 2 && pathSegments[0] in listOf("track", "song") -> pathSegments[1]
                 uri.host == "track" -> pathSegments.firstOrNull()

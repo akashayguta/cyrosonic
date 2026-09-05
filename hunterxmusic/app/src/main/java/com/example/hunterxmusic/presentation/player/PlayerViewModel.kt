@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
  * Acts as thin wrapper exposing player state and actions to the UI.
  */
 class PlayerViewModel(
-    private val playerManager: MusicPlayerManager,
+    val playerManager: MusicPlayerManager,
     private val musicRepository: MusicRepository,
     private val recentTracksStore: com.example.hunterxmusic.data.local.RecentTracksStore? = null
 ) : ViewModel() {

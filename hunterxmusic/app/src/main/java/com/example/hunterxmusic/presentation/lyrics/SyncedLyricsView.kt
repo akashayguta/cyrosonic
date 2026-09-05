@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.hunterxmusic.data.local.LyricsTranslationPrefs
 import com.example.hunterxmusic.domain.model.LyricLine
+import com.example.hunterxmusic.domain.model.Track
 import com.example.hunterxmusic.theme.nClick
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -66,6 +67,7 @@ fun SyncedLyricsView(
     lyrics: List<LyricLine>,
     playbackPositionMsProvider: () -> Long,
     onLyricClick: (timestampMs: Long) -> Unit,
+    track: Track? = null,
     acousticSyncOffsetMs: Long = 0L,
     initialSyncOffsetMs: Long = 0L,
     onSyncOffsetChanged: (Long) -> Unit = {},
@@ -79,6 +81,8 @@ fun SyncedLyricsView(
     val listState = rememberLazyListState()
     val translations = remember { mutableStateMapOf<Int, String>() }
     val lyricScope = rememberCoroutineScope()
+    var selectedLineIndices by remember { mutableStateOf(setOf<Int>()) }
+    var showStoryCardDialog by remember { mutableStateOf(false) }
 
     // Active translation target: null = off, else one of the language codes
     var internalTargetLang by remember { mutableStateOf<String?>(targetLang) }
@@ -319,7 +323,10 @@ fun SyncedLyricsView(
                                     .fillMaxWidth()
                                     .combinedClickable(
                                         onClick = {},
-                                        onLongClick = { translateLine(index, lyricLine.words) }
+                                        onLongClick = {
+                                            selectedLineIndices = setOf(index)
+                                            showStoryCardDialog = true
+                                        }
                                     )
                             ) {
                             SyncedLyricRow(
@@ -335,7 +342,19 @@ fun SyncedLyricsView(
                             )
                             }
                         } else {
-                            PlainLyricRow(lyricLine = lyricLine, translation = translations[index])
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onLongClick = {
+                                            selectedLineIndices = setOf(index)
+                                            showStoryCardDialog = true
+                                        }
+                                    )
+                            ) {
+                                PlainLyricRow(lyricLine = lyricLine, translation = translations[index])
+                            }
                         }
                     }
                 }
@@ -453,6 +472,15 @@ fun SyncedLyricsView(
                 }
             }
         }
+    }
+
+    if (showStoryCardDialog) {
+        StoryLyricCardDialog(
+            track = track,
+            lyrics = lyrics,
+            initialSelected = selectedLineIndices,
+            onDismiss = { showStoryCardDialog = false }
+        )
     }
 }
 
@@ -839,5 +867,363 @@ private fun LyricsLoadingState() {
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
+    }
+}
+
+/**
+ * Apple Music / Spotify-style Aesthetic Story Card Generator for Instagram, WhatsApp & Snapchat.
+ * Displays a 9:16 vertical luxury gradient canvas with album art, selected lyric lines (1-4 lines),
+ * and cyrosonic.com/track/{id} watermark.
+ */
+@Composable
+fun StoryLyricCardDialog(
+    track: com.example.hunterxmusic.domain.model.Track?,
+    lyrics: List<LyricLine>,
+    initialSelected: Set<Int>,
+    onDismiss: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var selectedIndices by remember { mutableStateOf(initialSelected) }
+    val validLyrics = remember(lyrics) { lyrics.filter { !it.isInstrumental && it.words.isNotBlank() } }
+
+    val selectedLines = remember(selectedIndices, lyrics) {
+        selectedIndices.sorted().mapNotNull { idx -> lyrics.getOrNull(idx)?.words?.trim() }
+    }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.85f))
+                .padding(20.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color(0xFF0F1420))
+                    .border(1.5.dp, Color(0xFF38BDF8).copy(alpha = 0.4f), RoundedCornerShape(24.dp))
+                    .padding(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Story Lyric Card",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Select 1 to 4 lines to share",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 12.sp
+                        )
+                    }
+                    Text(
+                        text = "${selectedLines.size}/4 lines",
+                        color = if (selectedLines.size in 1..4) Color(0xFF38BDF8) else Color(0xFFEF4444),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Aesthetic 9:16 Story Card Preview
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.85f)
+                        .height(310.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color(0xFF1E1B4B),
+                                    Color(0xFF311042),
+                                    Color(0xFF030712)
+                                )
+                            )
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                        .padding(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // Top: Track Info & Artwork
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF1E293B))
+                            ) {
+                                coil.compose.AsyncImage(
+                                    model = track?.albumArtUrl,
+                                    contentDescription = track?.title,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = track?.title ?: "CyroSonic Music",
+                                    color = Color.White,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = track?.artist ?: "Unknown Artist",
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 11.5.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        // Middle: Selected Lyric Lines (Apple Music quote style)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (selectedLines.isEmpty()) {
+                                Text(
+                                    text = "Tap any lyric line below to include in story...",
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    fontSize = 13.sp,
+                                    style = androidx.compose.ui.text.TextStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                                )
+                            } else {
+                                selectedLines.take(4).forEach { line ->
+                                    Text(
+                                        text = "“$line”",
+                                        color = Color.White,
+                                        fontSize = 14.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        lineHeight = 20.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // Bottom: Official cyrosonic.com Watermark
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.Black.copy(alpha = 0.4f))
+                                .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(text = "🎵", fontSize = 11.sp)
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = "cyrosonic.com/track/${track?.id ?: ""}",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Action Sharing Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Instagram Story Button
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(42.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Brush.horizontalGradient(listOf(Color(0xFFE1306C), Color(0xFF833AB4))))
+                            .nClick(pressedScale = 0.94f) {
+                                shareStoryCard(context, track, selectedLines, "com.instagram.android")
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "📸 Instagram",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // WhatsApp Status Button
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(42.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF25D366))
+                            .nClick(pressedScale = 0.94f) {
+                                shareStoryCard(context, track, selectedLines, "com.whatsapp")
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "💬 WhatsApp",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // Generic Share
+                    Box(
+                        modifier = Modifier
+                            .weight(0.9f)
+                            .height(42.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF1E293B))
+                            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                            .nClick(pressedScale = 0.94f) {
+                                shareStoryCard(context, track, selectedLines, null)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "📤 Share",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Close Button
+                Text(
+                    text = "Close",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .clickable { onDismiss() }
+                        .padding(8.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Generates an aesthetic bitmap and dispatches an ACTION_SEND intent to Instagram, WhatsApp, or system share sheet.
+ */
+private fun shareStoryCard(
+    context: android.content.Context,
+    track: com.example.hunterxmusic.domain.model.Track?,
+    lyrics: List<String>,
+    targetPackage: String? = null
+) {
+    try {
+        val width = 1080
+        val height = 1920
+        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+
+        // Luxury gradient backdrop
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        val shader = android.graphics.LinearGradient(
+            0f, 0f, width.toFloat(), height.toFloat(),
+            intArrayOf(0xFF0F172A.toInt(), 0xFF311042.toInt(), 0xFF020617.toInt()),
+            null,
+            android.graphics.Shader.TileMode.CLAMP
+        )
+        paint.shader = shader
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+
+        // Card container
+        paint.shader = null
+        paint.color = 0x22FFFFFF.toInt()
+        val cardRect = android.graphics.RectF(80f, 280f, width - 80f, height - 280f)
+        canvas.drawRoundRect(cardRect, 56f, 56f, paint)
+
+        // Border stroke
+        paint.style = android.graphics.Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        paint.color = 0x4438BDF8.toInt()
+        canvas.drawRoundRect(cardRect, 56f, 56f, paint)
+        paint.style = android.graphics.Paint.Style.FILL
+
+        // Track Title & Artist
+        paint.color = 0xFFFFFFFF.toInt()
+        paint.textSize = 52f
+        paint.isFakeBoldText = true
+        val title = track?.title ?: "CyroSonic Track"
+        canvas.drawText(title.take(30), 150f, 420f, paint)
+
+        paint.color = 0xFF94A3B8.toInt()
+        paint.textSize = 38f
+        paint.isFakeBoldText = false
+        val artist = track?.artist ?: "CyroSonic"
+        canvas.drawText(artist.take(34), 150f, 480f, paint)
+
+        // Lyrics lines
+        paint.color = 0xFFFFFFFF.toInt()
+        paint.textSize = 48f
+        paint.isFakeBoldText = true
+        var textY = 720f
+        val linesToRender = if (lyrics.isNotEmpty()) lyrics.take(4) else listOf("Listening on CyroSonic")
+        for (line in linesToRender) {
+            canvas.drawText("“$line”", 150f, textY, paint)
+            textY += 130f
+        }
+
+        // Watermark
+        paint.color = 0xFF38BDF8.toInt()
+        paint.textSize = 36f
+        paint.isFakeBoldText = true
+        val watermark = "cyrosonic.com/track/${track?.id ?: ""}"
+        canvas.drawText(watermark, 150f, height - 360f, paint)
+
+        // Save to cache
+        val file = java.io.File(context.cacheDir, "story_card_${System.currentTimeMillis()}.png")
+        file.outputStream().use { out ->
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+        }
+
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+
+        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            putExtra(android.content.Intent.EXTRA_TEXT, "Listen to \"${track?.title}\" on CyroSonic: https://cyrosonic.com/track/${track?.id}")
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (targetPackage != null) {
+                setPackage(targetPackage)
+            }
+        }
+        context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Lyric Story Card"))
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(context, "Shared via CyroSonic: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
     }
 }

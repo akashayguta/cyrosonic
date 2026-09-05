@@ -167,10 +167,10 @@ class HomeViewModel(
             val vibe = personalizationEngine?.getCurrentVibe()
             val artists = personalizationEngine?.getTopArtists(8) ?: emptyList()
 
-            // Strictly exclude recently played tracks as requested
+            // Strictly exclude recently played tracks as requested, unless pool is depleted
             val excludedIds = (_state.value.recentlyPlayed.map { it.id } + _state.value.recentTracks.map { it.id }).toSet()
 
-            // ─── PHASE 1: Most Listened (9 tracks) ───
+            // ─── PHASE 1: Most Listened (Cold-Start Random -> Adaptive Taste) ───
             val scoredHistory = buildPersonalisedSpeedDial(history)
             val mostListenedPool = (mostPlayedTracks + scoredHistory)
                 .distinctBy { it.id }
@@ -179,19 +179,22 @@ class HomeViewModel(
             val phase1 = if (mostListenedPool.size >= 9) {
                 mostListenedPool.take(9)
             } else {
-                val backfill = (_state.value.trending + _state.value.forYouRecommendations)
+                // If user history has < 9 songs (cold start / new install), fill remainder
+                // with vibrant, random trending & discovery hits so Speed Dial is never empty!
+                val discoveryPool = (_state.value.trending + _state.value.quickPicks + _state.value.forYouRecommendations + _state.value.countrySongs)
                     .distinctBy { it.id }
-                    .filter { it.id !in excludedIds && mostListenedPool.none { m -> m.id == it.id } }
-                (mostListenedPool + backfill).take(9)
+                    .filter { candidate -> mostListenedPool.none { it.id == candidate.id } }
+                    .shuffled()
+                (mostListenedPool + discoveryPool).take(9)
             }
             val phase1Ids = phase1.map { it.id }.toSet()
 
             // ─── PHASE 2: Recommended & Fresh Discovery (9 tracks) ───
-            val recPool = (_state.value.quickPicks + _state.value.forYouRecommendations + _state.value.trending)
+            val recPool = (_state.value.quickPicks + _state.value.forYouRecommendations + _state.value.trending + _state.value.countrySongs)
                 .distinctBy { it.id }
-                .filter { it.id !in excludedIds && it.id !in phase1Ids }
+                .filter { it.id !in phase1Ids }
                 .shuffled()
-            val phase2 = recPool.take(9)
+            val phase2 = (recPool + _state.value.trending.shuffled()).distinctBy { it.id }.filter { it.id !in phase1Ids }.take(9)
             val phase2Ids = phase2.map { it.id }.toSet()
 
             // ─── PHASE 3: Related to Favorite Artist / Track (9 tracks) ───
@@ -205,16 +208,16 @@ class HomeViewModel(
             val relatedTracks = try {
                 musicRepository.searchTracks("$topArtistCandidate best songs")
                     .distinctBy { it.id }
-                    .filter { it.id !in excludedIds && it.id !in phase1Ids && it.id !in phase2Ids }
+                    .filter { it.id !in phase1Ids && it.id !in phase2Ids }
                     .take(9)
             } catch (_: Exception) { emptyList() }
 
             val phase3 = if (relatedTracks.size >= 6) {
                 relatedTracks.take(9)
             } else {
-                (_state.value.countrySongs + _state.value.trending)
+                (_state.value.countrySongs + _state.value.trending + _state.value.quickPicks)
                     .distinctBy { it.id }
-                    .filter { it.id !in excludedIds && it.id !in phase1Ids && it.id !in phase2Ids }
+                    .filter { it.id !in phase1Ids && it.id !in phase2Ids }
                     .shuffled()
                     .take(9)
             }
@@ -225,7 +228,7 @@ class HomeViewModel(
                 speedDialPhase3 = phase3,
                 speedDialPhase3Title = phase3Title,
                 speedDial = (phase1 + phase2 + phase3).take(27),
-                speedDialIsPersonalised = phase1.isNotEmpty(),
+                speedDialIsPersonalised = mostListenedPool.isNotEmpty(),
                 mostPlayed = mostPlayedTracks,
                 currentVibe = vibe,
                 topArtists = artists

@@ -883,26 +883,49 @@ fun DarkTrackListItem(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope
 ) {
+    val rankBadgeColor = when (rankNumber) {
+        1 -> Color(0xFFFFD700) // Heavenly Gold
+        2 -> Color(0xFFE2E8F0) // Platinum Silver
+        3 -> Color(0xFFF59E0B) // Radiant Bronze
+        else -> Color(0xFF38BDF8) // Celestial Cyan
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF0C101A))
+            .border(1.dp, Color.White.copy(alpha = if (rankNumber <= 3) 0.12f else 0.04f), RoundedCornerShape(16.dp))
             .nClick(pressedScale = 0.97f) { onClick() }
-            .padding(horizontal = 20.dp, vertical = 6.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        Text(
-            text = rankNumber.toString(),
-            color = if (rankNumber <= 3) Color(0xFF7DD3FC) else Color(0xFF71717A),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.width(24.dp)
-        )
+        // Rank Indicator with Crown for #1
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(rankBadgeColor.copy(alpha = 0.15f))
+                .border(1.dp, rankBadgeColor.copy(alpha = 0.5f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = if (rankNumber == 1) "👑" else rankNumber.toString(),
+                color = rankBadgeColor,
+                fontSize = if (rankNumber == 1) 12.sp else 12.5.sp,
+                fontWeight = FontWeight.Black
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
 
         Box(
             modifier = Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF1E293B))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
         ) {
             AsyncImage(
                 model = track.albumArtUrl,
@@ -912,62 +935,110 @@ fun DarkTrackListItem(
             )
         }
 
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(14.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = track.title,
                 color = Color.White,
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = track.artist,
                 color = Color(0xFFA1A1AA),
-                fontSize = 11.5.sp,
+                fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Tactile Play Arrow
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.07f))
+        ) {
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = "Play track",
+                tint = rankBadgeColor,
+                modifier = Modifier.size(18.dp)
             )
         }
     }
 }
 
+data class CelestialVibe(
+    val title: String,
+    val subtitle: String,
+    val icon: String,
+    val query: String,
+    val gradientColors: List<Color>
+)
+
 @Composable
 fun DarkVibeGrid(onMoodClick: (String) -> Unit) {
     val vibes = listOf(
-        "🔥 Trending" to "trending",
-        "🌙 Late Night" to "lofi",
-        "⚡ Energy" to "energy",
-        "💖 Romantic" to "romantic"
+        CelestialVibe("Cosmic Euphoria", "Late night neon & bass", "🌌", "lofi synthwave hits", listOf(Color(0xFF4338CA), Color(0xFF6D28D9))),
+        CelestialVibe("Heavenly Peace", "Pure acoustic calm", "🕊️", "peaceful acoustic chill", listOf(Color(0xFF065F46), Color(0xFF0D9488))),
+        CelestialVibe("High Voltage", "Workout adrenaline rush", "⚡", "workout hype phonk party", listOf(Color(0xFF991B1B), Color(0xFFD97706))),
+        CelestialVibe("Starlight Drift", "Deep focus & study", "✨", "deep focus chill lofi", listOf(Color(0xFF1E293B), Color(0xFF334155)))
     )
 
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 6.dp)
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        vibes.forEach { (label, query) ->
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(42.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF13131A))
-                    .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
-                    .nClick(pressedScale = 0.94f) { onMoodClick(query) }
-                    .padding(horizontal = 8.dp)
+        val rows = vibes.chunked(2)
+        for (row in rows) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = label,
-                    color = Color.White,
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1
-                )
+                for (vibe in row) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(76.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Brush.linearGradient(vibe.gradientColors.map { it.copy(alpha = 0.55f) }))
+                            .border(1.dp, vibe.gradientColors.first().copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                            .nClick(pressedScale = 0.95f) { onMoodClick(vibe.query) }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = vibe.icon, fontSize = 16.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = vibe.title,
+                                    color = Color.White,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(
+                                text = vibe.subtitle,
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 10.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             }
         }
     }

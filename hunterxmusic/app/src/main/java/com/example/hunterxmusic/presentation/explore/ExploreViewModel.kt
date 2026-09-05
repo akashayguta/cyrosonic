@@ -209,20 +209,30 @@ class ExploreViewModel(
             )
             try {
                 coroutineScope {
+                    val spotlightQueries = listOf("global trending 2026", "billboard hot 100", "top songs viral", "international music hits")
+                    val releasesQueries = listOf("latest hit music releases 2026", "new music friday 2026", "fresh drops 2026", "brand new hits 2026")
+                    val chartQueries = listOf("global top 50 chart", "viral hits chart 2026", "shazam top hits", "trending songs global")
+                    val viralQueries = listOf("viral phonk synthwave underground hits", "cyberpunk phonk bass", "tiktok viral music", "deep underground phonk")
+
+                    val chosenSpotlight = spotlightQueries.random()
+                    val chosenReleases = releasesQueries.random()
+                    val chosenCharts = chartQueries.random()
+                    val chosenViral = viralQueries.random()
+
                     val spotlightDeferred = async {
-                        try { musicRepository.getTrendingSongs("global") }
+                        try { musicRepository.getTrendingSongs(chosenSpotlight) }
                         catch (_: Exception) { emptyList() }
                     }
                     val releasesDeferred = async {
-                        try { musicRepository.searchTracks("latest hit music releases 2026") }
+                        try { musicRepository.searchTracks(chosenReleases) }
                         catch (_: Exception) { emptyList() }
                     }
                     val chartsDeferred = async {
-                        try { musicRepository.getTrendingSongs("global top 50 chart") }
+                        try { musicRepository.getTrendingSongs(chosenCharts) }
                         catch (_: Exception) { emptyList() }
                     }
                     val viralDeferred = async {
-                        try { musicRepository.searchTracks("viral phonk synthwave underground hits") }
+                        try { musicRepository.searchTracks(chosenViral) }
                         catch (_: Exception) { emptyList() }
                     }
                     val statsDeferred = async {
@@ -230,11 +240,11 @@ class ExploreViewModel(
                         catch (_: Exception) { emptyList() }
                     }
 
-                    val rawSpotlights = spotlightDeferred.await()
+                    val rawSpotlights = spotlightDeferred.await().shuffled()
                     val spotlightCleaned = rawSpotlights.filter { !it.albumArtUrl.isNullOrBlank() }.take(6)
-                    val newReleases = releasesDeferred.await().take(20)
+                    val newReleases = releasesDeferred.await().shuffled().take(20)
                     val charts = chartsDeferred.await().take(20)
-                    val viral = viralDeferred.await().take(20)
+                    val viral = viralDeferred.await().shuffled().take(20)
                     val topArtists = statsDeferred.await().take(10)
 
                     _state.value = _state.value.copy(

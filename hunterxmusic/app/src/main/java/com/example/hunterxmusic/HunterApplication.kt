@@ -39,10 +39,11 @@ class HunterApplication : Application() {
             )
         } catch (_: Exception) { }
 
-        // Initialize high-priority broadcast notification channels
+        // Initialize high-priority broadcast notification channels & listening party
         try {
             com.example.hunterxmusic.data.notification.OwnerNotificationManager.initNotificationChannel(this)
             com.example.hunterxmusic.core.broadcast.ServerBroadcastManager.syncLatestBroadcast(this, dependencies.okHttpClient)
+            com.example.hunterxmusic.data.party.ListeningPartyManager.init(dependencies.okHttpClient)
         } catch (_: Exception) { }
     }
 

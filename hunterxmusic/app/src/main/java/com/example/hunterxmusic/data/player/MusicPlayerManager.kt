@@ -187,7 +187,65 @@ class MusicPlayerManager(
         }
     }
 
+    private val playbackPrefs by lazy {
+        context.getSharedPreferences("cyrosonic_playback_state", Context.MODE_PRIVATE)
+    }
+
+    private fun savePlaybackState(track: Track?, positionMs: Long) {
+        if (track == null || track.id.isBlank()) return
+        playbackPrefs.edit()
+            .putString("saved_track_id", track.id)
+            .putString("saved_track_title", track.title)
+            .putString("saved_track_artist", track.artist)
+            .putString("saved_track_album", track.album.orEmpty())
+            .putString("saved_track_art_url", track.albumArtUrl.orEmpty())
+            .putString("saved_track_stream_url", track.streamingUrl.orEmpty())
+            .putLong("saved_track_duration", track.durationMs)
+            .putLong("saved_track_position", positionMs)
+            .apply()
+    }
+
+    private fun loadSavedPlaybackState(): Pair<Track, Long>? {
+        val id = playbackPrefs.getString("saved_track_id", null) ?: return null
+        if (id.isBlank()) return null
+        val title = playbackPrefs.getString("saved_track_title", "") ?: ""
+        val artist = playbackPrefs.getString("saved_track_artist", "") ?: ""
+        val album = playbackPrefs.getString("saved_track_album", "") ?: ""
+        val artUrl = playbackPrefs.getString("saved_track_art_url", null)
+        val streamUrl = playbackPrefs.getString("saved_track_stream_url", null)
+        val duration = playbackPrefs.getLong("saved_track_duration", 0L)
+        val position = playbackPrefs.getLong("saved_track_position", 0L)
+
+        val track = Track(
+            id = id,
+            title = title,
+            artist = artist,
+            album = album,
+            albumArtUrl = artUrl,
+            streamingUrl = streamUrl,
+            durationMs = duration
+        )
+        return Pair(track, position)
+    }
+
     init {
+        // Restore last played track and seek position from persistence so MiniPlayer
+        // is immediately available at the exact saved song and timestamp upon app restart.
+        val restored = loadSavedPlaybackState()
+        if (restored != null) {
+            val (restoredTrack, restoredPos) = restored
+            _queue.clear()
+            _queue.add(restoredTrack)
+            _playbackState.value = _playbackState.value.copy(
+                currentTrack = restoredTrack,
+                queue = listOf(restoredTrack),
+                queueIndex = 0,
+                isPlaying = false,
+                isBuffering = false,
+                currentPositionMs = restoredPos,
+                durationMs = restoredTrack.durationMs
+            )
+        }
         connectToService()
     }
 
@@ -404,7 +462,7 @@ class MusicPlayerManager(
     /**
      * Play a single track immediately. Resolves streaming URL, sets MediaItem, and starts playback.
      */
-    fun playTrack(track: Track) {
+    fun playTrack(track: Track, seekToMs: Long = 0L) {
         playbackJob?.cancel()
         // Immediately silence and pause old audio so track switch is instantaneous
         mediaController?.pause()
@@ -412,7 +470,7 @@ class MusicPlayerManager(
             currentTrack = track,
             isPlaying = false,
             isBuffering = true,
-            currentPositionMs = 0L,
+            currentPositionMs = seekToMs,
             queueMessage = null
         )
         playbackJob = scope.launch {
@@ -433,13 +491,17 @@ class MusicPlayerManager(
                 queueIndex = 0,
                 isPlaying = false,
                 isBuffering = true,
-                currentPositionMs = 0L,
+                currentPositionMs = seekToMs,
                 queueMessage = null
             )
             observeActiveTrack(track.id)
 
-            // Resolve streaming URL in background with top network priority
-            val url = resolveUrl(track)
+            // Resolve streaming URL and high-res artwork bytes concurrently in background
+            val (url, artworkBytes) = coroutineScope {
+                val urlDeferred = async(Dispatchers.IO) { resolveUrl(track) }
+                val artDeferred = async(Dispatchers.IO) { fetchArtworkBytes(track.albumArtUrl) }
+                Pair(urlDeferred.await(), artDeferred.await())
+            }
             if (url.isBlank()) {
                 com.example.hunterxmusic.core.network.NetworkFocusManager.releasePlaybackPriority()
                 Log.w("MusicPlayerManager", "Track ${track.title} stream unavailable. Skipping to next song.")
@@ -459,13 +521,18 @@ class MusicPlayerManager(
                 queue = _queue.toList()
             )
 
-            val mediaItem = buildMediaItem(updatedTrack, url)
+            val mediaItem = buildMediaItem(updatedTrack, url, artworkBytes)
             controller.apply {
                 setPlaybackSpeed(_playbackSpeed.value)
                 setMediaItem(mediaItem)
                 prepare()
+                if (seekToMs > 0L) {
+                    seekTo(seekToMs)
+                }
                 play()
             }
+
+            savePlaybackState(updatedTrack, seekToMs)
 
             // Release playback critical lock after audio buffer is started
             scope.launch {
@@ -530,7 +597,11 @@ class MusicPlayerManager(
             )
             observeActiveTrack(startTrack.id)
 
-            val url = resolveUrl(startTrack)
+            val (url, artworkBytes) = coroutineScope {
+                val urlDeferred = async(Dispatchers.IO) { resolveUrl(startTrack) }
+                val artDeferred = async(Dispatchers.IO) { fetchArtworkBytes(startTrack.albumArtUrl) }
+                Pair(urlDeferred.await(), artDeferred.await())
+            }
             if (url.isBlank()) {
                 com.example.hunterxmusic.core.network.NetworkFocusManager.releasePlaybackPriority()
                 Log.w("MusicPlayerManager", "Track ${startTrack.title} stream unavailable. Skipping to next song.")
@@ -549,13 +620,14 @@ class MusicPlayerManager(
                 queue = _queue.toList()
             )
 
-            val startMediaItem = buildMediaItem(_queue[safeStartIndex], url)
+            val startMediaItem = buildMediaItem(_queue[safeStartIndex], url, artworkBytes)
             controller.apply {
                 setPlaybackSpeed(_playbackSpeed.value)
                 setMediaItem(startMediaItem)
                 prepare()
                 play()
             }
+            savePlaybackState(_queue[safeStartIndex], 0L)
 
             scope.launch {
                 delay(1200)
@@ -740,22 +812,45 @@ class MusicPlayerManager(
     }
 
     fun togglePlayPause() {
-        mediaController?.let {
-            if (it.isPlaying) it.pause() else it.play()
+        val controller = mediaController
+        if (controller == null || controller.currentMediaItem == null) {
+            val track = _playbackState.value.currentTrack
+            if (track != null) {
+                playTrack(track, seekToMs = _playbackState.value.currentPositionMs)
+                return
+            }
+        }
+        controller?.let {
+            if (it.isPlaying) {
+                it.pause()
+                savePlaybackState(_playbackState.value.currentTrack, _playbackState.value.currentPositionMs)
+            } else {
+                it.play()
+            }
         }
     }
 
     fun pause() {
         mediaController?.pause()
+        savePlaybackState(_playbackState.value.currentTrack, _playbackState.value.currentPositionMs)
     }
 
     fun resume() {
-        mediaController?.play()
+        val controller = mediaController
+        if (controller == null || controller.currentMediaItem == null) {
+            val track = _playbackState.value.currentTrack
+            if (track != null) {
+                playTrack(track, seekToMs = _playbackState.value.currentPositionMs)
+                return
+            }
+        }
+        controller?.play()
     }
 
     fun seekTo(positionMs: Long) {
         mediaController?.seekTo(positionMs)
         _playbackState.value = _playbackState.value.copy(currentPositionMs = positionMs)
+        savePlaybackState(_playbackState.value.currentTrack, positionMs)
     }
 
     fun skipToNext() {

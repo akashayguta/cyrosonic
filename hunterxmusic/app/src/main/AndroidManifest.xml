@@ -73,8 +73,19 @@
                     android:host="www.cyrosonic.com"
                     android:pathPrefix="/song" />
                 <data
+                    android:scheme="https"
+                    android:host="cyrosonic.com"
+                    android:pathPrefix="/party" />
+                <data
+                    android:scheme="https"
+                    android:host="www.cyrosonic.com"
+                    android:pathPrefix="/party" />
+                <data
                     android:scheme="cyrosonic"
                     android:host="track" />
+                <data
+                    android:scheme="cyrosonic"
+                    android:host="party" />
             </intent-filter>
         </activity>
 

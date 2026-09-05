@@ -6,15 +6,13 @@ import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +29,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,6 +38,30 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.hunterxmusic.domain.model.Track
 import com.example.hunterxmusic.theme.*
+
+private val HOT_TRENDING_CHIPS = listOf(
+    "Midnight Phonk",
+    "Acoustic Chill",
+    "Bollywood Hits 2026",
+    "English Top Hits",
+    "K-Pop Viral",
+    "EDM Bass Drop",
+    "Desi Hip-Hop",
+    "Lofi Midnight Rain",
+    "Gym Beast Mode",
+    "Cyberpunk Synth"
+)
+
+private val DISCOVERY_MOOD_TILES = listOf(
+    MoodFolderItem("Lofi Chill", "🌙", "lofi chill beats", listOf(Color(0xFF312E81), Color(0xFF1E1B4B))),
+    MoodFolderItem("Romantic Echoes", "💖", "romantic hindi love songs", listOf(Color(0xFF831843), Color(0xFF500724))),
+    MoodFolderItem("High Voltage", "⚡", "high energy workout trap", listOf(Color(0xFF854D0E), Color(0xFF451A03))),
+    MoodFolderItem("Club Euphoria", "🎉", "party club dance edm hits", listOf(Color(0xFF9F1239), Color(0xFF4C0519))),
+    MoodFolderItem("Focus Sanctuary", "🎧", "deep focus study beats ambient", listOf(Color(0xFF065F46), Color(0xFF064E3B))),
+    MoodFolderItem("Cyberpunk 2077", "🌌", "synthwave phonk cyberpunk drift", listOf(Color(0xFF4C1D95), Color(0xFF2E1065))),
+    MoodFolderItem("Desi Melodies", "🇮🇳", "trending bollywood melodies", listOf(Color(0xFFB45309), Color(0xFF78350F))),
+    MoodFolderItem("Acoustic Sunset", "🎸", "mellow acoustic guitar unplugged", listOf(Color(0xFF374151), Color(0xFF1F2937)))
+)
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -54,6 +77,7 @@ fun SearchScreen(
 ) {
     val state by viewModel.state
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val dismissKeyboard = {
@@ -80,62 +104,93 @@ fun SearchScreen(
             .background(HunterBackground)
             .nocturneAurora()
     ) {
-        // Luxury AMOLED Search Header
+        // Luxury AMOLED Search Header with glowing border
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            OutlinedTextField(
-                value = state.query,
-                onValueChange = { viewModel.onQueryChanged(it) },
-                placeholder = {
-                    Text("Search songs, artists, albums, lyrics...", color = HunterTextHint, fontSize = 14.5.sp)
-                },
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.White, modifier = Modifier.size(20.dp))
-                },
-                trailingIcon = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (state.query.isNotBlank()) {
-                            IconButton(onClick = { viewModel.clearSearch() }) {
-                                Icon(Icons.Default.Close, "Clear", tint = HunterTextSecondary, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                        IconButton(onClick = {
-                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak song or artist...")
-                            }
-                            try { voiceLauncher.launch(intent) } catch (_: Exception) { }
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = "Voice Search",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(HunterSurface)
+                    .border(
+                        1.2.dp,
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color(0xFF00F2FE).copy(alpha = 0.5f),
+                                Color(0xFF8B5CF6).copy(alpha = 0.35f),
+                                Color(0xFF00F2FE).copy(alpha = 0.2f)
                             )
+                        ),
+                        RoundedCornerShape(22.dp)
+                    )
+            ) {
+                OutlinedTextField(
+                    value = state.query,
+                    onValueChange = { viewModel.onQueryChanged(it) },
+                    placeholder = {
+                        Text(
+                            "Search songs, artists, albums, lyrics...",
+                            color = HunterTextHint,
+                            fontSize = 14.5.sp
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = Color(0xFF00F2FE),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (state.query.isNotBlank()) {
+                                IconButton(onClick = { viewModel.clearSearch() }) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        "Clear",
+                                        tint = HunterTextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            IconButton(onClick = {
+                                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak song or artist name...")
+                                }
+                                try { voiceLauncher.launch(intent) } catch (_: Exception) { }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = "Voice Search",
+                                    tint = Color(0xFF8B5CF6),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
-                    }
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFF7DD3FC).copy(alpha = 0.5f),
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.08f),
-                    cursorColor = Color(0xFF7DD3FC),
-                    focusedContainerColor = HunterSurface,
-                    unfocusedContainerColor = HunterSurface
-                ),
-                shape = RoundedCornerShape(20.dp),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    dismissKeyboard()
-                    viewModel.search()
-                }),
-                modifier = Modifier.fillMaxWidth()
-            )
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        cursorColor = Color(0xFF00F2FE),
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent
+                    ),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        dismissKeyboard()
+                        viewModel.search()
+                    }),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -150,20 +205,26 @@ fun SearchScreen(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
-                            .background(if (isSelected) Color(0xFF7DD3FC) else HunterSurface)
+                            .background(
+                                if (isSelected) Brush.horizontalGradient(listOf(Color(0xFF00F2FE), Color(0xFF8B5CF6)))
+                                else Brush.linearGradient(listOf(HunterSurface, HunterSurface))
+                            )
                             .border(
                                 1.dp,
-                                if (isSelected) Color(0xFF7DD3FC) else Color.White.copy(alpha = 0.08f),
+                                if (isSelected) Color(0xFF00F2FE).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.08f),
                                 RoundedCornerShape(14.dp)
                             )
-                            .clickable { viewModel.onCategorySelected(category) }
-                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                            .clickable {
+                                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                viewModel.onCategorySelected(category)
+                            }
+                            .padding(horizontal = 14.dp, vertical = 7.dp)
                     ) {
                         Text(
                             text = category.label,
                             color = if (isSelected) Color.Black else Color.White,
                             fontSize = 12.5.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium
                         )
                     }
                 }
@@ -204,8 +265,8 @@ fun SearchScreen(
                         .weight(1f)
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    repeat(6) {
-                        SearchSkeletonRow()
+                    repeat(7) {
+                        LuxurySearchSkeletonRow()
                         Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
@@ -218,11 +279,16 @@ fun SearchScreen(
                         .padding(32.dp)
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.SearchOff, null, tint = HunterTextHint, modifier = Modifier.size(54.dp))
+                        Icon(
+                            Icons.Default.SearchOff,
+                            contentDescription = null,
+                            tint = Color(0xFF00F2FE).copy(alpha = 0.6f),
+                            modifier = Modifier.size(54.dp)
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text("No matches found", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                         Text(
-                            "Try searching with another keyword, artist name, or title",
+                            "Try searching with another keyword, artist name, or song title",
                             color = HunterTextSecondary,
                             fontSize = 12.5.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -237,11 +303,11 @@ fun SearchScreen(
                         .fillMaxWidth()
                         .weight(1f)
                 ) {
-                    // Top Result Spotlight Hero
+                    // Top Result Spotlight Hero Card
                     val topMatch = state.results.firstOrNull()
                     if (topMatch != null) {
                         item(key = "top_match_spotlight") {
-                            TopResultSpotlightCard(
+                            LuxuryTopResultSpotlightCard(
                                 track = topMatch,
                                 onClick = {
                                     dismissKeyboard()
@@ -253,8 +319,8 @@ fun SearchScreen(
                     }
 
                     // Results List
-                    items(state.results.drop(1)) { track ->
-                        SearchResultItem(
+                    items(state.results.drop(1), key = { it.id }) { track ->
+                        LuxurySearchResultItem(
                             track = track,
                             onClick = {
                                 dismissKeyboard()
@@ -266,13 +332,62 @@ fun SearchScreen(
                 }
             }
         } else {
-            // Empty State: Recent Searches + Discovery Mood Folders
+            // Empty State: Trending Hot Searches + Recent Searches + Discovery Mood Folders
             LazyColumn(
                 contentPadding = PaddingValues(top = 8.dp, bottom = 140.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
             ) {
+                // Hot Trending Searches
+                item(key = "trending_searches_header") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 6.dp)
+                    ) {
+                        Text("🔥", fontSize = 14.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "TRENDING SEARCHES",
+                            color = Color(0xFF00F2FE),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                }
+
+                item(key = "trending_searches_row") {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(horizontal = 20.dp),
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    ) {
+                        items(HOT_TRENDING_CHIPS) { term ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color(0xFF131A29))
+                                    .border(1.dp, Color(0xFF00F2FE).copy(alpha = 0.25f), RoundedCornerShape(16.dp))
+                                    .clickable {
+                                        dismissKeyboard()
+                                        viewModel.onQueryChanged(term)
+                                        viewModel.search()
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.TrendingUp, null, tint = Color(0xFF00F2FE), modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(term, color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Recent Searches
                 if (state.recentQueries.isNotEmpty()) {
                     item(key = "recent_queries_header") {
@@ -281,7 +396,7 @@ fun SearchScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 8.dp)
+                                .padding(horizontal = 20.dp, vertical = 6.dp)
                         ) {
                             Text(
                                 text = "Recent Searches",
@@ -290,8 +405,8 @@ fun SearchScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Clear",
-                                color = Color(0xFF7DD3FC),
+                                text = "Clear All",
+                                color = Color(0xFF00F2FE),
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.clickable { viewModel.clearRecentSearches() }
@@ -311,12 +426,12 @@ fun SearchScreen(
                                         .clip(RoundedCornerShape(20.dp))
                                         .background(HunterSurface)
                                         .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                                        .clickable {
-                                            dismissKeyboard()
-                                            viewModel.onQueryChanged(query)
-                                            viewModel.search()
-                                        }
-                                        .padding(horizontal = 14.dp, vertical = 7.dp)
+                                    .clickable {
+                                        dismissKeyboard()
+                                        viewModel.onQueryChanged(query)
+                                        viewModel.search()
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp)
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.History, null, tint = HunterTextHint, modifier = Modifier.size(14.dp))
@@ -329,7 +444,7 @@ fun SearchScreen(
                     }
                 }
 
-                // Discovery Mood Folders Section
+                // Discovery Mood Folders Section (Bento Style)
                 item(key = "mood_folders_header") {
                     Text(
                         text = "Explore & Discover",
@@ -341,24 +456,13 @@ fun SearchScreen(
                 }
 
                 item(key = "mood_folders_grid") {
-                    val moodCategories = listOf(
-                        MoodFolderItem("Lofi Chill", "🌙", "lofi", listOf(Color(0xFF312E81), Color(0xFF1E1B4B))),
-                        MoodFolderItem("Romantic", "💖", "romantic", listOf(Color(0xFF831843), Color(0xFF500724))),
-                        MoodFolderItem("Energy", "⚡", "energy", listOf(Color(0xFF854D0E), Color(0xFF451A03))),
-                        MoodFolderItem("Party Hits", "🎉", "party", listOf(Color(0xFF9F1239), Color(0xFF4C0519))),
-                        MoodFolderItem("Focus & Study", "🎧", "focus", listOf(Color(0xFF065F46), Color(0xFF064E3B))),
-                        MoodFolderItem("Synthwave", "🌌", "synthwave", listOf(Color(0xFF4C1D95), Color(0xFF2E1065))),
-                        MoodFolderItem("Bollywood Hits", "🇮🇳", "trending hindi", listOf(Color(0xFFB45309), Color(0xFF78350F))),
-                        MoodFolderItem("Acoustic Vibes", "🎸", "acoustic", listOf(Color(0xFF374151), Color(0xFF1F2937)))
-                    )
-
                     Column(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
                     ) {
-                        moodCategories.chunked(2).forEach { rowItems ->
+                        DISCOVERY_MOOD_TILES.chunked(2).forEach { rowItems ->
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 modifier = Modifier.fillMaxWidth()
@@ -367,12 +471,12 @@ fun SearchScreen(
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .height(72.dp)
-                                            .clip(RoundedCornerShape(16.dp))
+                                            .height(76.dp)
+                                            .clip(RoundedCornerShape(18.dp))
                                             .background(Brush.linearGradient(item.gradient))
-                                            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                                            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(18.dp))
                                             .clickable { onMoodFolderOpen(item.key) }
-                                            .padding(12.dp)
+                                            .padding(14.dp)
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
@@ -383,9 +487,10 @@ fun SearchScreen(
                                                 text = item.name,
                                                 color = Color.White,
                                                 fontSize = 13.5.sp,
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.weight(1f)
                                             )
-                                            Text(text = item.icon, fontSize = 22.sp)
+                                            Text(text = item.icon, fontSize = 24.sp)
                                         }
                                     }
                                 }
@@ -399,10 +504,10 @@ fun SearchScreen(
 }
 
 /**
- * Top Result Spotlight Hero Card.
+ * Luxury Top Result Spotlight Hero Card.
  */
 @Composable
-private fun TopResultSpotlightCard(
+private fun LuxuryTopResultSpotlightCard(
     track: Track,
     onClick: () -> Unit,
     onArtistClick: () -> Unit
@@ -410,12 +515,16 @@ private fun TopResultSpotlightCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF13131A))
-            .border(1.dp, Color(0xFF7DD3FC).copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color(0xFF101522))
+            .border(
+                1.5.dp,
+                Brush.horizontalGradient(listOf(Color(0xFF00F2FE).copy(alpha = 0.6f), Color(0xFF8B5CF6).copy(alpha = 0.4f))),
+                RoundedCornerShape(24.dp)
+            )
             .clickable { onClick() }
-            .padding(14.dp)
+            .padding(16.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -423,8 +532,8 @@ private fun TopResultSpotlightCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(68.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(16.dp))
                     .background(Color(0xFF1E293B))
             ) {
                 AsyncImage(
@@ -435,27 +544,29 @@ private fun TopResultSpotlightCard(
                 )
             }
 
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFF7DD3FC).copy(alpha = 0.15f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF00F2FE).copy(alpha = 0.15f))
+                        .border(0.8.dp, Color(0xFF00F2FE).copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
-                        text = "TOP MATCH",
-                        color = Color(0xFF7DD3FC),
+                        text = "★ BEST MATCH",
+                        color = Color(0xFF00F2FE),
                         fontSize = 9.sp,
-                        fontWeight = FontWeight.Black
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 0.8.sp
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = track.title,
                     color = Color.White,
-                    fontSize = 14.5.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -463,25 +574,27 @@ private fun TopResultSpotlightCard(
                 Text(
                     text = track.artist,
                     color = Color(0xFFA1A1AA),
-                    fontSize = 12.sp,
+                    fontSize = 12.5.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.clickable { onArtistClick() }
                 )
             }
 
+            Spacer(modifier = Modifier.width(8.dp))
+
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF7DD3FC))
+                    .background(Brush.linearGradient(listOf(Color(0xFF00F2FE), Color(0xFF8B5CF6))))
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Play",
                     tint = Color.Black,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
@@ -489,10 +602,10 @@ private fun TopResultSpotlightCard(
 }
 
 /**
- * Clean search result item row with duration and bitrate badge.
+ * Luxury search result item row with cover shadow and bitrate badge.
  */
 @Composable
-private fun SearchResultItem(
+private fun LuxurySearchResultItem(
     track: Track,
     onClick: () -> Unit,
     onArtistClick: () -> Unit
@@ -502,12 +615,12 @@ private fun SearchResultItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 7.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
         Box(
             modifier = Modifier
-                .size(50.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(54.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF1E293B))
         ) {
             AsyncImage(
@@ -518,13 +631,13 @@ private fun SearchResultItem(
             )
         }
 
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(14.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = track.title,
                 color = Color.White,
-                fontSize = 13.5.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -532,57 +645,61 @@ private fun SearchResultItem(
             Text(
                 text = track.artist,
                 color = Color(0xFFA1A1AA),
-                fontSize = 11.5.sp,
+                fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.clickable { onArtistClick() }
             )
         }
 
+        Spacer(modifier = Modifier.width(8.dp))
+
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color.White.copy(alpha = 0.05f))
-                .padding(horizontal = 6.dp, vertical = 2.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.White.copy(alpha = 0.06f))
+                .border(0.8.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                .padding(horizontal = 7.dp, vertical = 3.dp)
         ) {
             Text(
-                text = "HQ",
-                color = Color(0xFF7DD3FC),
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold
+                text = "LOSSLESS",
+                color = Color(0xFF00F2FE),
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp
             )
         }
     }
 }
 
 @Composable
-private fun SearchSkeletonRow() {
+private fun LuxurySearchSkeletonRow() {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
     ) {
         Box(
             modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF1F2937))
+                .size(52.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF161E2E))
         )
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.6f)
+                    .fillMaxWidth(0.65f)
                     .height(14.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF1F2937))
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF161E2E))
             )
             Spacer(modifier = Modifier.height(6.dp))
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.35f)
-                    .height(10.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF1F2937))
+                    .fillMaxWidth(0.4f)
+                    .height(11.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF161E2E))
             )
         }
     }

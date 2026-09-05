@@ -90,6 +90,7 @@ fun PlayerScreen(
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showOptionsMenu by remember { mutableStateOf(false) }
     var showEqualizerSheet by remember { mutableStateOf(false) }
+    var showListeningPartyDialog by remember { mutableStateOf(false) }
 
     // Per-track remembered lyric calibration â€” the nudge you set once keeps
     // working every time this song plays.
@@ -306,6 +307,14 @@ fun PlayerScreen(
                                     showEqualizerSheet = true
                                 }
                             )
+                            DropdownMenuItem(
+                                text = { Text("Shared Listening Party", color = HunterTextPrimary) },
+                                leadingIcon = { Icon(Icons.Default.Headphones, null, tint = Color(0xFF00F2FE)) },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    showListeningPartyDialog = true
+                                }
+                            )
                             if (track != null) {
                                 DropdownMenuItem(
                                     text = { Text("Add to Playlist", color = HunterTextPrimary) },
@@ -423,6 +432,7 @@ fun PlayerScreen(
                                 lyrics = lyrics,
                                 playbackPositionMsProvider = { playbackState.currentPositionMs },
                                 onLyricClick = { playerViewModel.seekTo(it) },
+                                track = track,
                                 acousticSyncOffsetMs = acousticSyncOffsetMs,
                                 initialSyncOffsetMs = savedLyricOffsetMs,
                                 onSyncOffsetChanged = { offset ->
@@ -800,18 +810,23 @@ fun PlayerScreen(
                             Icon(Icons.Default.SkipPrevious, "Previous", tint = HunterTextPrimary, modifier = Modifier.size(38.dp))
                         }
 
-                        // Play/Pause (large circle with morphing spring icon)
+                        // Play/Pause (large master circle with radial glow and animated spring icon)
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(68.dp)
+                                .size(70.dp)
                                 .clip(CircleShape)
-                                .background(HunterTextPrimary)
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(vibrantColor, Color.White)
+                                    )
+                                )
+                                .border(1.5.dp, Color.White.copy(alpha = 0.45f), CircleShape)
                                 .nClick(pressedScale = 0.92f, onClick = { playerViewModel.togglePlayPause() })
                         ) {
                             AnimatedPlayPauseIcon(
                                 isPlaying = playbackState.isPlaying,
-                                tint = HunterBackground,
+                                tint = Color(0xFF090D16),
                                 size = 36.dp
                             )
                         }
@@ -856,6 +871,29 @@ fun PlayerScreen(
                                 tint = HunterTextSecondary,
                                 modifier = Modifier.size(24.dp)
                             )
+                        }
+
+                        // 2. Shared Listening Party
+                        val partyState by com.example.hunterxmusic.data.party.ListeningPartyManager.partyState.collectAsState()
+                        val isPartyConnected = partyState.status == com.example.hunterxmusic.data.party.PartyConnectionStatus.CONNECTED
+                        IconButton(onClick = { showListeningPartyDialog = true }) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Headphones,
+                                    contentDescription = "Listening Party",
+                                    tint = if (isPartyConnected) Color(0xFF00F2FE) else HunterTextSecondary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                if (isPartyConnected) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF10B981))
+                                            .align(Alignment.TopEnd)
+                                    )
+                                }
+                            }
                         }
 
                         // 3. Playback Speed Selector
@@ -1041,6 +1079,14 @@ fun PlayerScreen(
         EqualizerSheet(
             audioFxManager = com.example.hunterxmusic.HunterApplication.dependencies.audioFxManager,
             onDismiss = { showEqualizerSheet = false }
+        )
+    }
+
+    // Shared Listening Party Dialog
+    if (showListeningPartyDialog) {
+        com.example.hunterxmusic.presentation.party.ListeningPartyDialog(
+            playerManager = playerViewModel.playerManager,
+            onDismiss = { showListeningPartyDialog = false }
         )
     }
 
@@ -1438,6 +1484,7 @@ fun FullScreenLyricsView(
                     lyrics = lyrics,
                     playbackPositionMsProvider = playbackPositionMsProvider,
                     onLyricClick = onLyricClick,
+                    track = track,
                     acousticSyncOffsetMs = acousticSyncOffsetMs,
                     initialSyncOffsetMs = initialSyncOffsetMs,
                     onSyncOffsetChanged = onSyncOffsetChanged,
